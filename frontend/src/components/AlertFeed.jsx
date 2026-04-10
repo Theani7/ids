@@ -1,16 +1,16 @@
-import StatusBadge from './StatusBadge';
+import { Shield, ShieldAlert } from 'lucide-react';
 
 export default function AlertFeed({ alerts }) {
   if (!alerts || alerts.length === 0) {
     return (
-      <div className="border border-netborder bg-netsurface rounded p-4 h-full flex flex-col">
-        <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-[#8b9ab3] mb-3">
+      <div className="card p-4 h-full flex flex-col">
+        <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-netcyan" />
           Live Alerts
         </h3>
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm font-mono text-[#8b9ab3]">
+          <p className="text-sm text-gray-500">
             No alerts yet — waiting for traffic
-            <span className="animate-blink">▌</span>
           </p>
         </div>
       </div>
@@ -18,64 +18,47 @@ export default function AlertFeed({ alerts }) {
   }
 
   return (
-    <div className="border border-netborder bg-netsurface rounded p-4 flex flex-col h-full">
-      <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-[#8b9ab3] mb-3">
+    <div className="card p-4 flex flex-col h-full">
+      <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+        <Shield className="w-4 h-4 text-netcyan" />
         Live Alerts
-        <span className="ml-2 text-netcyan">[{alerts.length}]</span>
+        <span className="ml-auto text-xs text-gray-500">{alerts.length} total</span>
       </h3>
 
-      <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
         {alerts.map((alert, idx) => {
           const isMalicious = alert.label === 'MALICIOUS';
-          const ts = alert.timestamp
-            ? new Date(alert.timestamp).toLocaleTimeString()
-            : '--:--:--';
-          const confidence = ((alert.confidence || 0) * 100).toFixed(1);
+          const ts = alert.timestamp ? new Date(alert.timestamp).toLocaleTimeString() : '--:--';
+          const confidence = ((alert.confidence || 0) * 100).toFixed(0);
 
           return (
             <div
               key={alert.id || idx}
-              className={`
-                flex items-center gap-3 px-3 py-2 rounded
-                border-l-[3px] bg-netbg/50
-                transition-all duration-300
-                ${isMalicious ? 'border-l-netred' : 'border-l-netgreen'}
-                ${idx === 0 ? 'animate-fade-in' : ''}
-              `}
+              className={`flex items-center gap-3 p-3 rounded-lg border-l-4 bg-netbg/50 transition-all ${
+                isMalicious 
+                  ? 'border-l-netred hover:bg-netred/5' 
+                  : 'border-l-netgreen hover:bg-netgreen/5'
+              } ${idx === 0 ? 'animate-fade-in' : ''}`}
             >
-              {/* Timestamp */}
-              <span className="text-[10px] font-mono text-[#8b9ab3] shrink-0 w-16">
-                {ts}
-              </span>
-
-              {/* Flow */}
-              <span className="text-xs font-mono text-netcyan truncate min-w-0 flex-1">
-                {alert.src_ip}:{alert.src_port}
-                <span className="text-[#8b9ab3] mx-1">→</span>
-                {alert.dst_ip}:{alert.dst_port}
-              </span>
-
-              {/* Protocol */}
-              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-netborder/40 text-[#8b9ab3] rounded shrink-0">
-                {alert.protocol}
-              </span>
-
-              {/* Badge */}
-              <StatusBadge label={alert.label} />
-
-              {/* Confidence bar */}
-              <div className="w-16 shrink-0">
-                <div className="h-1 rounded-full bg-netborder overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      isMalicious ? 'bg-netred' : 'bg-netgreen'
-                    }`}
-                    style={{ width: `${confidence}%` }}
-                  />
+              <span className="text-xs font-mono text-gray-500 shrink-0">{ts}</span>
+              
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-mono text-white">{alert.src_ip}</span>
+                  <span className="text-gray-500">→</span>
+                  <span className="font-mono text-white truncate">{alert.dst_ip}:{alert.dst_port}</span>
                 </div>
-                <p className="text-[9px] font-mono text-[#8b9ab3] text-right mt-0.5">
+              </div>
+
+              <span className={`badge ${isMalicious ? 'badge-danger' : 'badge-success'}`}>
+                {isMalicious ? <ShieldAlert className="w-3 h-3 mr-1" /> : <Shield className="w-3 h-3 mr-1" />}
+                {alert.label}
+              </span>
+
+              <div className="w-12 text-right">
+                <span className={`text-xs font-medium ${isMalicious ? 'text-netred' : 'text-netgreen'}`}>
                   {confidence}%
-                </p>
+                </span>
               </div>
             </div>
           );

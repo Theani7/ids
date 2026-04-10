@@ -16,7 +16,7 @@ Base = declarative_base()
 
 def init_db():
     """Create all database tables."""
-    from backend.db.models import Alert  # noqa: F401
+    from backend.db.models import Alert, TrafficStats, ProtocolStats, DNSQuery, HTTPRequest  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
 

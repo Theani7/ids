@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design System ───────────────────────────────────────── */
+:root {
+  --bg-primary: #0a0f1c;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1f2937;
+  --border-color: #374151;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --accent-primary: #00d4ff;
+  --accent-success: #10b981;
+  --accent-warning: #f59e0b;
+  --accent-danger: #ef4444;
+}
+
 /* ── Global ──────────────────────────────────────────────── */
 *,
 *::before,
@@ -10,7 +25,7 @@
 }
 
 html {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -18,65 +33,95 @@ html {
 body {
   margin: 0;
   padding: 0;
-  background: #05070f;
-  color: #e6edf3;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   min-height: 100vh;
+  line-height: 1.5;
 }
 
 /* ── Selection ───────────────────────────────────────────── */
 ::selection {
-  background: rgba(0, 212, 255, 0.3);
-  color: #e6edf3;
+  background: rgba(0, 212, 255, 0.25);
+  color: var(--text-primary);
 }
 
 /* ── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1a2332;
-  border-radius: 3px;
+  background: var(--border-color);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a3a4e;
+  background: #4b5563;
 }
 
-/* ── Animations ──────────────────────────────────────────── */
-@keyframes scanline {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
-
-@keyframes glow-green {
-  0%, 100% { box-shadow: 0 0 5px rgba(0, 255, 136, 0.2); }
-  50% { box-shadow: 0 0 15px rgba(0, 255, 136, 0.4); }
-}
-
-@keyframes glow-red {
-  0%, 100% { box-shadow: 0 0 5px rgba(255, 45, 85, 0.2); }
-  50% { box-shadow: 0 0 15px rgba(255, 45, 85, 0.4); }
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.animate-glow-green {
-  animation: glow-green 2s ease-in-out infinite;
-}
-
-.animate-glow-red {
-  animation: glow-red 1.5s ease-in-out infinite;
-}
-
-.animate-blink {
-  animation: blink 1s step-end infinite;
+/* ── Utility Classes ────────────────────────────────────── */
+@layer components {
+  .card {
+    @apply bg-netsurface border border-netborder rounded-lg;
+  }
+  
+  .card-hover {
+    @apply card hover:border-primary/50 transition-colors duration-200;
+  }
+  
+  .btn-primary {
+    @apply px-4 py-2 bg-primary text-netbg font-medium rounded-lg 
+           hover:bg-primary-light transition-colors duration-200 
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 bg-netborder text-white font-medium rounded-lg 
+           hover:bg-gray-600 transition-colors duration-200
+           border border-netborder;
+  }
+  
+  .btn-danger {
+    @apply px-4 py-2 bg-netred/10 text-netred font-medium rounded-lg 
+           hover:bg-netred/20 transition-colors duration-200
+           border border-netred/30;
+  }
+  
+  .btn-success {
+    @apply px-4 py-2 bg-netgreen/10 text-netgreen font-medium rounded-lg 
+           hover:bg-netgreen/20 transition-colors duration-200
+           border border-netgreen/30;
+  }
+  
+  .input {
+    @apply w-full px-3 py-2 bg-netbg border border-netborder rounded-lg
+           text-white placeholder-gray-500
+           focus:outline-none focus:border-netcyan focus:ring-1 focus:ring-netcyan
+           transition-all duration-200;
+  }
+  
+  .badge {
+    @apply inline-flex items-center px-2 py-1 text-xs font-medium rounded-full;
+  }
+  
+  .badge-success {
+    @apply badge bg-netgreen/10 text-netgreen border border-netgreen/20;
+  }
+  
+  .badge-danger {
+    @apply badge bg-netred/10 text-netred border border-netred/20;
+  }
+  
+  .badge-warning {
+    @apply badge bg-netorange/10 text-netorange border border-netorange/20;
+  }
+  
+  .badge-info {
+    @apply badge bg-netcyan/10 text-netcyan border border-netcyan/20;
+  }
 }

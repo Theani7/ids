@@ -2,15 +2,17 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LandingPage from './pages/LandingPage';
 import LiveTracker from './pages/LiveTracker';
 import BatchAnalyzer from './pages/BatchAnalyzer';
+import Analytics from './pages/Analytics';
+import PCAPAnalyzer from './pages/PCAPAnalyzer';
 import Navigation from './components/Navigation';
 
 const DashboardLayout = ({ children }) => {
   return (
     <div className="flex h-screen bg-netbg overflow-hidden">
       <Navigation />
-      <div className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto bg-netbg">
         {children}
-      </div>
+      </main>
     </div>
   );
 };
@@ -18,7 +20,7 @@ const DashboardLayout = ({ children }) => {
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-netbg text-[#e6edf3] font-mono">
+      <div className="min-h-screen bg-netbg text-white font-sans antialiased">
         <Routes>
           <Route path="/" element={<LandingPage />} />
           
@@ -30,6 +32,16 @@ function App() {
           <Route path="/batch" element={
             <DashboardLayout>
               <BatchAnalyzer />
+            </DashboardLayout>
+          } />
+          <Route path="/analytics" element={
+            <DashboardLayout>
+              <Analytics />
+            </DashboardLayout>
+          } />
+          <Route path="/pcap" element={
+            <DashboardLayout>
+              <PCAPAnalyzer />
             </DashboardLayout>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />

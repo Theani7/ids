@@ -33,6 +33,8 @@ class PacketSniffer:
         self.loop = loop
         self.tracker = FlowTracker()
         self._stop_event = threading.Event()
+        self._packet_count = 0
+        self._last_log_time = datetime.now()
 
     # ------------------------------------------------------------------
     # Async helper — called from the *event-loop* thread via
@@ -50,10 +52,131 @@ class PacketSniffer:
     def _packet_callback(self, packet) -> None:
         """Called by Scapy for every captured packet."""
         try:
+            self._packet_count += 1
+            
+            # Log every 100 packets to verify capture is working
+            now = datetime.now()
+            if (now - self._last_log_time).seconds >= 5:
+                logger.info(f"Captured {self._packet_count} packets on {self.interface}")
+                self._last_log_time = now
+            
             self.tracker.add_packet(packet)
             self._check_completed_flows()
+            self._extract_dns_http(packet)
         except Exception as exc:
             logger.debug("Error processing packet: %s", exc)
+
+    def _extract_dns_http(self, packet) -> None:
+        """Extract DNS queries and HTTP requests from packets."""
+        from scapy.all import TCP, IP, Raw
+        from scapy.layers.dns import DNS, DNSQR
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        
+        # Extract DNS queries
+        if packet.haslayer(DNS) and packet.haslayer(DNSQR):
+            try:
+                dns = packet[DNS]
+                dns_qr = packet[DNSQR]
+                
+                if dns_qr.qname:
+                    query_name = dns_qr.qname.decode() if isinstance(dns_qr.qname, bytes) else str(dns_qr.qname)
+                    query_name = query_name.rstrip('.')
+                    query_type = self._get_dns_type(dns_qr.qtype)
+                    
+                    # Check for suspicious DNS (long queries, high entropy, etc)
+                    is_malicious = len(query_name) > 50 or query_name.count('.') > 5
+                    
+                    logger.info(f"DNS QUERY: {query_name} (type: {query_type}) from {packet[IP].src if packet.haslayer(IP) else '?'}")
+                    
+                    result = {
+                        "type": "dns",
+                        "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                        "src_ip": packet[IP].src if packet.haslayer(IP) else "",
+                        "dst_ip": packet[IP].dst if packet.haslayer(IP) else "",
+                        "query_name": query_name,
+                        "query_type": query_type,
+                        "is_malicious": is_malicious,
+                    }
+                    
+                    # Thread-safe transfer
+                    try:
+                        self.loop.call_soon_threadsafe(
+                            asyncio.ensure_future,
+                            self._put_result(result),
+                        )
+                    except RuntimeError:
+                        pass
+            except Exception as exc:
+                logger.error(f"Error extracting DNS: {exc}")
+        
+        # Extract HTTP requests (only on port 80 or common HTTP ports)
+        if packet.haslayer(TCP) and packet.haslayer(Raw) and packet.haslayer(IP):
+            try:
+                tcp = packet[TCP]
+                # Only check common HTTP ports
+                if tcp.dport not in [80, 8080, 8000, 3000, 5000, 5173] and tcp.sport not in [80, 8080, 8000, 3000, 5000, 5173]:
+                    return
+                    
+                payload = packet[Raw].load.decode('utf-8', errors='ignore')
+                
+                # Check if it's an HTTP request (look for HTTP method at start)
+                http_methods = ('GET ', 'POST ', 'PUT ', 'DELETE ', 'PATCH ', 'HEAD ', 'OPTIONS ')
+                if any(payload.startswith(m) for m in http_methods):
+                    lines = payload.split('\r\n')
+                    request_line = lines[0]
+                    parts = request_line.split(' ')
+                    
+                    if len(parts) >= 2:
+                        method = parts[0]
+                        uri = parts[1]
+                        
+                        # Extract headers
+                        headers = {}
+                        for line in lines[1:]:
+                            if ':' in line:
+                                key, value = line.split(':', 1)
+                                headers[key.strip().lower()] = value.strip()
+                        
+                        host = headers.get('host', packet[IP].dst)
+                        user_agent = headers.get('user-agent', '')
+                        
+                        logger.info(f"HTTP {method}: {host}{uri[:50]} from {packet[IP].src}")
+                        
+                        # Check for suspicious patterns
+                        suspicious_patterns = ['sql', 'union', 'select', 'insert', 'delete', 'drop', 'script', 'onload', 'onerror']
+                        is_suspicious = any(p in uri.lower() or p in payload.lower() for p in suspicious_patterns)
+                        
+                        result = {
+                            "type": "http",
+                            "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                            "src_ip": packet[IP].src,
+                            "dst_ip": packet[IP].dst,
+                            "src_port": tcp.sport,
+                            "dst_port": tcp.dport,
+                            "method": method,
+                            "host": host,
+                            "uri": uri[:200],
+                            "user_agent": user_agent[:200],
+                            "is_suspicious": is_suspicious,
+                        }
+                        
+                        # Thread-safe transfer
+                        try:
+                            self.loop.call_soon_threadsafe(
+                                asyncio.ensure_future,
+                                self._put_result(result),
+                            )
+                        except RuntimeError:
+                            pass
+            except Exception as exc:
+                logger.error(f"Error extracting HTTP: {exc}")
+
+    def _get_dns_type(self, qtype: int) -> str:
+        """Convert DNS query type number to string."""
+        types = {1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 
+                 15: 'MX', 16: 'TXT', 28: 'AAAA', 33: 'SRV', 255: 'ANY'}
+        return types.get(qtype, f'TYPE{qtype}')
 
     def _check_completed_flows(self) -> None:
         """Extract completed flows, classify them, and queue results."""
@@ -123,3 +246,73 @@ class PacketSniffer:
     def stop(self) -> None:
         """Signal the sniffer thread to stop."""
         self._stop_event.set()
+
+
+def analyze_pcap_file(pcap_path: str) -> dict:
+    """Analyze a PCAP file and return statistics."""
+    from scapy.all import rdpcap
+    from collections import Counter
+    from backend.ml.feature_extractor import FlowTracker
+    from backend.ml.predict import predictor
+    
+    logger.info(f"Analyzing PCAP file: {pcap_path}")
+    
+    try:
+        packets = rdpcap(pcap_path)
+    except Exception as e:
+        logger.error(f"Failed to read PCAP file: {e}")
+        raise
+    
+    tracker = FlowTracker()
+    protocols = Counter()
+    top_talkers = Counter()
+    
+    # Process all packets
+    for packet in packets:
+        try:
+            tracker.add_packet(packet)
+            
+            # Count protocols
+            if packet.haslayer("IP"):
+                proto = "TCP" if packet.haslayer("TCP") else "UDP" if packet.haslayer("UDP") else "OTHER"
+                protocols[proto] += 1
+                
+                # Track top talkers
+                src_ip = packet["IP"].src
+                top_talkers[src_ip] += 1
+        except Exception:
+            pass
+    
+    # Get completed flows and classify
+    completed_flows = tracker.get_all_flows()
+    malicious_count = 0
+    alerts = []
+    
+    for flow in completed_flows:
+        try:
+            metadata = flow["metadata"]
+            features = flow["features"]
+            prediction = predictor.predict(features)
+            
+            if prediction["label"] == "MALICIOUS":
+                malicious_count += 1
+                alerts.append({
+                    "src_ip": metadata["src_ip"],
+                    "dst_ip": metadata["dst_ip"],
+                    "src_port": metadata["src_port"],
+                    "dst_port": metadata["dst_port"],
+                    "protocol": metadata["protocol"],
+                    "confidence": prediction["confidence"],
+                })
+        except Exception:
+            pass
+    
+    return {
+        "flow_count": len(completed_flows),
+        "malicious_count": malicious_count,
+        "protocols": dict(protocols),
+        "top_talkers": [
+            {"ip": ip, "packets": count} for ip, count in top_talkers.most_common(10)
+        ],
+        "alerts": alerts[:50],  # Limit to top 50 alerts
+    }

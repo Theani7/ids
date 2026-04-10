@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: '',
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -44,6 +44,70 @@ export async function batchAnalyze(file) {
   const formData = new FormData();
   formData.append('file', file);
   const { data } = await api.post('/api/batch-analyze', formData);
+  return data;
+}
+
+// Traffic & Protocol Stats
+export async function getTrafficStats(hours = 24) {
+  const { data } = await api.get('/api/traffic', { params: { hours } });
+  return data;
+}
+
+export async function getProtocolStats(hours = 24) {
+  const { data } = await api.get('/api/protocols', { params: { hours } });
+  return data;
+}
+
+// Trends & Geography
+export async function getTrends(days = 7) {
+  const { data } = await api.get('/api/trends', { params: { days } });
+  return data;
+}
+
+export async function getGeography(days = 7) {
+  const { data } = await api.get('/api/geography', { params: { days } });
+  return data;
+}
+
+// DNS & HTTP Monitoring
+export async function getDNSQueries(page = 1, limit = 50, filter = 'all') {
+  const { data } = await api.get('/api/dns', { params: { page, limit, filter } });
+  return data;
+}
+
+export async function getHTTPRequests(page = 1, limit = 50, filter = 'all') {
+  const { data } = await api.get('/api/http', { params: { page, limit, filter } });
+  return data;
+}
+
+// VPN/Tunnel Detection
+export async function getVPNTunnels(hours = 24) {
+  const { data } = await api.get('/api/vpn-tunnels', { params: { hours } });
+  return data;
+}
+
+// PCAP Upload
+export async function uploadPCAP(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post('/api/pcap/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+// Export Reports
+export function exportCSV(days = 7) {
+  window.open(`/api/export/csv?days=${days}`, '_blank');
+}
+
+export function exportJSON(days = 7) {
+  window.open(`/api/export/json?days=${days}`, '_blank');
+}
+
+// Debug: Check database counts
+export async function getDebugCounts() {
+  const { data } = await api.get('/api/debug/counts');
   return data;
 }
 

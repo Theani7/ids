@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Play, Square, Wifi, AlertCircle } from 'lucide-react';
 import { getInterfaces } from '../api/client';
 
 export default function InterfaceSelector({ onStart, onStop, capturing }) {
@@ -44,70 +45,56 @@ export default function InterfaceSelector({ onStart, onStop, capturing }) {
   };
 
   return (
-    <div className="border border-netborder bg-netsurface rounded p-4">
-      <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-[#8b9ab3] mb-3">
+    <div className="card p-4">
+      <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+        <Wifi className="w-4 h-4 text-netcyan" />
         Network Interface
       </h3>
 
-      {/* Dropdown */}
       <select
         value={selected}
         onChange={(e) => setSelected(e.target.value)}
         disabled={capturing}
-        className="w-full bg-netbg border border-netborder text-[#e6edf3] 
-                   font-mono text-sm rounded px-3 py-2 mb-3
-                   focus:outline-none focus:border-netcyan/50
-                   disabled:opacity-50 disabled:cursor-not-allowed"
+        className="input mb-3"
       >
-        {interfaces.length === 0 && (
-          <option value="">No interfaces found</option>
-        )}
+        {interfaces.length === 0 && <option value="">No interfaces found</option>}
         {interfaces.map((iface) => (
-          <option key={iface} value={iface}>
-            {iface}
-          </option>
+          <option key={iface} value={iface}>{iface}</option>
         ))}
       </select>
 
-      {/* Buttons */}
-      <div className="flex gap-2">
-        {!capturing ? (
-          <button
-            onClick={handleStart}
-            disabled={loading || !selected}
-            className="flex-1 px-4 py-2 border border-netgreen text-netgreen text-xs font-mono
-                       uppercase tracking-wider rounded
-                       hover:bg-netgreen hover:text-black
-                       transition-all duration-200
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {loading ? '...' : '▶ START CAPTURE'}
-          </button>
-        ) : (
-          <button
-            onClick={handleStop}
-            disabled={loading}
-            className="flex-1 px-4 py-2 border border-netred text-netred text-xs font-mono
-                       uppercase tracking-wider rounded
-                       hover:bg-netred hover:text-black
-                       transition-all duration-200
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {loading ? '...' : '■ STOP CAPTURE'}
-          </button>
-        )}
-      </div>
+      {!capturing ? (
+        <button
+          onClick={handleStart}
+          disabled={loading || !selected}
+          className="w-full btn-success flex items-center justify-center gap-2"
+        >
+          <Play className="w-4 h-4" />
+          {loading ? 'Starting...' : 'Start Capture'}
+        </button>
+      ) : (
+        <button
+          onClick={handleStop}
+          disabled={loading}
+          className="w-full btn-danger flex items-center justify-center gap-2"
+        >
+          <Square className="w-4 h-4" />
+          {loading ? 'Stopping...' : 'Stop Capture'}
+        </button>
+      )}
 
-      {/* Status */}
       {capturing && (
-        <div className="mt-3 flex items-center gap-2 text-xs font-mono text-netgreen">
-          <span className="inline-block w-2 h-2 rounded-full bg-netgreen animate-pulse" />
-          Capturing on <span className="text-netcyan">{selected}</span>
+        <div className="mt-3 flex items-center gap-2 text-sm text-netgreen">
+          <span className="w-2 h-2 rounded-full bg-netgreen animate-pulse" />
+          Capturing on <span className="font-mono text-netcyan">{selected}</span>
         </div>
       )}
 
       {error && (
-        <p className="mt-2 text-xs font-mono text-netred">{error}</p>
+        <div className="mt-3 flex items-center gap-2 text-sm text-netred">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
       )}
     </div>
   );

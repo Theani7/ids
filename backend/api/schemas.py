@@ -53,3 +53,100 @@ class FlowResult(BaseModel):
     confidence: float
     timestamp: str
 
+
+class TrafficStatsResponse(BaseModel):
+    intervals: list[str]
+    bytes_in: list[int]
+    bytes_out: list[int]
+    packets_in: list[int]
+    packets_out: list[int]
+
+
+class ProtocolPortStat(BaseModel):
+    port: int
+    protocol: str
+    count: int
+
+
+class ProtocolStatsResponse(BaseModel):
+    protocols: list[str]
+    counts: list[int]
+    bytes: list[int]
+    top_ports: list[ProtocolPortStat]
+
+
+class HourlyTrend(BaseModel):
+    labels: list[str]
+    total: list[int]
+    malicious: list[int]
+
+
+class AttackTypeDist(BaseModel):
+    types: list[str]
+    counts: list[int]
+
+
+class TrendDataResponse(BaseModel):
+    hourly: HourlyTrend
+    daily: HourlyTrend
+    attack_types: AttackTypeDist
+
+
+class CountryStat(BaseModel):
+    name: str
+    total: int
+    attacks: int
+
+
+class CityStat(BaseModel):
+    name: str
+    country: str
+    total: int
+    attacks: int
+
+
+class MapPoint(BaseModel):
+    lat: float
+    lon: float
+    country: str
+    city: str
+    ip: str
+
+
+class GeoDataResponse(BaseModel):
+    countries: list[CountryStat]
+    cities: list[CityStat]
+    map_points: list[MapPoint]
+
+
+class TopDomain(BaseModel):
+    domain: str
+    count: int
+
+
+class DNSQueryResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    queries: list[dict]
+    top_domains: list[TopDomain]
+
+
+class TopHost(BaseModel):
+    host: str
+    count: int
+
+
+class MethodStat(BaseModel):
+    method: str
+    count: int
+
+
+class HTTPRequestResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    requests: list[dict]
+    top_hosts: list[TopHost]
+    methods: list[MethodStat]
+
