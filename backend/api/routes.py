@@ -245,8 +245,23 @@ async def get_status():
 @router.get("/api/interfaces")
 async def get_interfaces():
     """List available network interfaces."""
+    import sys
     try:
-        interfaces = list(psutil.net_if_addrs().keys())
+        raw_interfaces = list(psutil.net_if_addrs().keys())
+        if sys.platform == "darwin":
+            friendly_names = {
+                "en0": "Wi-Fi (en0)",
+                "en1": "Ethernet (en1)",
+                "en2": "Ethernet (en2)",
+                "en3": "Ethernet (en3)",
+                "en4": "Ethernet (en4)",
+                "lo0": "Loopback (lo0)",
+            }
+            interfaces = [friendly_names.get(i, i) for i in raw_interfaces]
+        elif sys.platform == "win32":
+            interfaces = raw_interfaces
+        else:
+            interfaces = raw_interfaces
     except Exception:
         interfaces = ["eth0", "lo"]
     return {"interfaces": interfaces}
