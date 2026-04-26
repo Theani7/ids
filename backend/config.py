@@ -19,20 +19,21 @@ def _get_default_interface() -> str:
     logger.info(f"Available network interfaces: {interfaces}")
     
     if sys.platform == "darwin":
-        if "en0" in interfaces:
-            return "en0"
-        for iface in ["en1", "en2", "en3"]:
+        for iface in ["en0", "en1", "en2", "en3"]:
             if iface in interfaces:
                 return iface
+        return "en0"
     
-    for iface in interfaces:
-        if iface.lower() in ["wifi", "wi-fi", "ethernet", "lan", "wan"]:
-            return iface
     if sys.platform == "win32":
         for iface in interfaces:
             if not iface.startswith("\\"):
                 return iface
-        return interfaces[0] if interfaces else "\\Device\\NPF_Unknown"
+        return interfaces[0] if interfaces else "\\\\Device\\\\NPF_Unknown"
+    
+    for iface in interfaces:
+        if iface.lower() in ["wifi", "wi-fi", "ethernet", "lan", "wan", "wlan0"]:
+            return iface
+    
     return interfaces[0] if interfaces else "eth0"
 
 NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", _get_default_interface())
