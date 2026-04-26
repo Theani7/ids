@@ -17,7 +17,9 @@ export default function LiveTracker() {
       try {
         const s = await getStats();
         setDbStats(s);
-      } catch {}
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      }
     })();
   }, []);
 

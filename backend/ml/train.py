@@ -135,7 +135,6 @@ def train():
         max_depth=6,
         learning_rate=0.1,
         scale_pos_weight=scale_pos_weight,
-        use_label_encoder=False,
         eval_metric="logloss",
         n_jobs=-1,
         random_state=42,

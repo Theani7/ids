@@ -1,7 +1,15 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from sqlalchemy import Column, Integer, String, Float, DateTime, BigInteger
 from backend.db.database import Base
+
+
+def _get_current_timestamp():
+    """Get current timestamp with configurable timezone."""
+    try:
+        from backend.config import TIMEZONE
+        return datetime.now(TIMEZONE)
+    except Exception:
+        return datetime.utcnow()
 
 
 class Alert(Base):
@@ -22,7 +30,7 @@ class Alert(Base):
     label = Column(String, nullable=False)  # "NORMAL" or "MALICIOUS"
     confidence = Column(Float, nullable=False)
     attack_type = Column(String, nullable=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")), nullable=False)
+    timestamp = Column(DateTime, default=_get_current_timestamp, nullable=False)
 
     def to_dict(self):
         return {
@@ -48,7 +56,7 @@ class TrafficStats(Base):
     __tablename__ = "traffic_stats"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+    timestamp = Column(DateTime, default=_get_current_timestamp)
     interface = Column(String, nullable=False)
     bytes_in = Column(BigInteger, default=0)
     bytes_out = Column(BigInteger, default=0)
@@ -72,7 +80,7 @@ class ProtocolStats(Base):
     __tablename__ = "protocol_stats"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+    timestamp = Column(DateTime, default=_get_current_timestamp)
     protocol = Column(String, nullable=False)  # TCP, UDP, ICMP, etc.
     port = Column(Integer, nullable=True)
     count = Column(Integer, default=0)
@@ -94,7 +102,7 @@ class DNSQuery(Base):
     __tablename__ = "dns_queries"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+    timestamp = Column(DateTime, default=_get_current_timestamp)
     src_ip = Column(String, nullable=False)
     dst_ip = Column(String, nullable=True)
     query_name = Column(String, nullable=False)
@@ -120,7 +128,7 @@ class HTTPRequest(Base):
     __tablename__ = "http_requests"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+    timestamp = Column(DateTime, default=_get_current_timestamp)
     src_ip = Column(String, nullable=False)
     dst_ip = Column(String, nullable=True)
     src_port = Column(Integer, nullable=True)

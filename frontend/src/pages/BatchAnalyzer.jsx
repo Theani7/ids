@@ -124,7 +124,7 @@ export default function BatchAnalyzer() {
               />
               <StatCard
                 title="Detection Ratio"
-                value={`${((results.malicious / results.total) * 100).toFixed(2)}%`}
+                value={results.total > 0 ? `${((results.malicious / results.total) * 100).toFixed(2)}%` : '0%'}
                 subtitle="Malicious / Total"
                 color="green"
               />

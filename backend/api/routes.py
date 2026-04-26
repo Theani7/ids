@@ -6,18 +6,19 @@ import asyncio
 import json
 import logging
 import threading
-from typing import List, Optional
+from typing import List
 
 import psutil
 import pandas as pd
 import io
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, UploadFile, File, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from backend.config import NETWORK_INTERFACE
+from backend.config import NETWORK_INTERFACE, TIMEZONE
 from backend.db.database import get_db
 from backend.db.models import Alert, TrafficStats, ProtocolStats, DNSQuery, HTTPRequest
+from backend.api.rate_limit import check_rate_limit
 from backend.capture.packet_sniffer import PacketSniffer
 from backend.ml.predict import predictor
 from backend.notifications.telegram_bot import TelegramNotifier
@@ -48,6 +49,7 @@ result_queue: asyncio.Queue = asyncio.Queue()
 websocket_clients: List[WebSocket] = []
 capturing: bool = False
 notifier = TelegramNotifier()
+shutdown_event: asyncio.Event = asyncio.Event()
 
 # ---------------------------------------------------------------------------
 # Background task — pulls from the queue and broadcasts
@@ -56,7 +58,8 @@ notifier = TelegramNotifier()
 
 async def broadcast_results():
     """Infinite loop: drain *result_queue*, persist, notify, broadcast."""
-    while True:
+    logger.info("Background broadcast task started")
+    while not shutdown_event.is_set():
         try:
             result = await asyncio.wait_for(result_queue.get(), timeout=1.0)
         except asyncio.TimeoutError:
@@ -64,6 +67,9 @@ async def broadcast_results():
         except Exception:
             await asyncio.sleep(0.5)
             continue
+        
+        if shutdown_event.is_set():
+            break
 
         result_type = result.get("type", "flow")
 
@@ -76,21 +82,30 @@ async def broadcast_results():
             # Flow/Alert result (existing behavior)
             await _persist_flow(result)
 
+    logger.info("Background broadcast task stopped")
+
+
+async def shutdown_broadcast_task():
+    """Gracefully shutdown the broadcast task."""
+    logger.info("Initiating broadcast task shutdown...")
+    shutdown_event.set()
+    await asyncio.sleep(1.5)
+
 
 async def _persist_dns(result: dict) -> None:
     """Persist DNS query to database."""
+    from backend.db.database import SessionLocal
+    from backend.config import TIMEZONE
+    from datetime import datetime
+    
+    db = SessionLocal()
     try:
-        from backend.db.database import SessionLocal
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        
-        db = SessionLocal()
         timestamp = result.get("timestamp")
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
         
         dns = DNSQuery(
-            timestamp=timestamp or datetime.now(ZoneInfo("Asia/Kolkata")),
+            timestamp=timestamp or datetime.now(TIMEZONE),
             src_ip=result.get("src_ip", ""),
             dst_ip=result.get("dst_ip", ""),
             query_name=result.get("query_name", ""),
@@ -99,26 +114,27 @@ async def _persist_dns(result: dict) -> None:
         )
         db.add(dns)
         db.commit()
-        db.close()
         logger.info(f"Saved DNS: {result.get('query_name')} ({result.get('query_type')})")
     except Exception as exc:
         logger.error(f"DNS persist error: {exc}")
+    finally:
+        db.close()
 
 
 async def _persist_http(result: dict) -> None:
     """Persist HTTP request to database."""
+    from backend.db.database import SessionLocal
+    from backend.config import TIMEZONE
+    from datetime import datetime
+    
+    db = SessionLocal()
     try:
-        from backend.db.database import SessionLocal
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        
-        db = SessionLocal()
         timestamp = result.get("timestamp")
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
         
         http = HTTPRequest(
-            timestamp=timestamp or datetime.now(ZoneInfo("Asia/Kolkata")),
+            timestamp=timestamp or datetime.now(TIMEZONE),
             src_ip=result.get("src_ip", ""),
             dst_ip=result.get("dst_ip", ""),
             src_port=result.get("src_port", 0),
@@ -131,10 +147,11 @@ async def _persist_http(result: dict) -> None:
         )
         db.add(http)
         db.commit()
-        db.close()
         logger.info(f"Saved HTTP: {result.get('method')} {result.get('host')}{result.get('uri', '')[:30]}")
     except Exception as exc:
         logger.error(f"HTTP persist error: {exc}")
+    finally:
+        db.close()
 
 
 async def _persist_flow(result: dict) -> None:
@@ -148,10 +165,10 @@ async def _persist_flow(result: dict) -> None:
     result["src_city"] = geo_data["city"]
 
     # 2. Persist to DB
-    try:
-        from backend.db.database import SessionLocal
+    from backend.db.database import SessionLocal
 
-        db = SessionLocal()
+    db = SessionLocal()
+    try:
         alert = Alert(
             src_ip=result.get("src_ip", ""),
             dst_ip=result.get("dst_ip", ""),
@@ -171,9 +188,10 @@ async def _persist_flow(result: dict) -> None:
         result["id"] = alert.id
         if alert.timestamp:
             result["timestamp"] = alert.timestamp.isoformat()
-        db.close()
     except Exception as exc:
         logger.error("DB persist error: %s", exc)
+    finally:
+        db.close()
 
     # 3. Telegram notification (only for malicious flows)
     if result.get("label") == "MALICIOUS":
@@ -185,15 +203,18 @@ async def _persist_flow(result: dict) -> None:
     # 4. WebSocket broadcast
     disconnected: List[WebSocket] = []
     payload = json.dumps(result)
-    for ws in websocket_clients:
+    clients_snapshot = list(websocket_clients)
+    for ws in clients_snapshot:
         try:
-            await ws.send_text(payload)
+            if ws in websocket_clients:
+                await ws.send_text(payload)
         except Exception:
             disconnected.append(ws)
 
     for ws in disconnected:
         try:
-            websocket_clients.remove(ws)
+            if ws in websocket_clients:
+                websocket_clients.remove(ws)
         except ValueError:
             pass
 
@@ -232,13 +253,22 @@ async def get_interfaces():
 
 
 @router.post("/api/capture/start")
-async def start_capture(body: CaptureStartRequest):
+async def start_capture(body: CaptureStartRequest, request: Request):
     global sniffer, sniffer_thread, capturing
+
+    # Rate limiting: max 10 capture starts per minute
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(f"capture:{client_ip}", max_requests=10, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Too many capture requests. Please wait.")
 
     if capturing:
         return {"status": "already_running", "interface": sniffer.interface if sniffer else ""}
 
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+    
     sniffer = PacketSniffer(
         interface=body.interface,
         result_queue=result_queue,
@@ -315,7 +345,13 @@ async def get_stats(db: Session = Depends(get_db)):
     )
 
 @router.post("/api/batch-analyze")
-async def batch_analyze(file: UploadFile = File(...)):
+async def batch_analyze(file: UploadFile = File(...), request: Request = None):
+    # Rate limiting: max 5 batch uploads per minute
+    if request:
+        client_ip = request.client.host if request.client else "unknown"
+        if not check_rate_limit(f"batch:{client_ip}", max_requests=5, window_seconds=60):
+            raise HTTPException(status_code=429, detail="Too many batch requests. Please wait.")
+    
     # Handle CSV upload and analysis
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
@@ -391,7 +427,7 @@ async def get_traffic_stats(
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=hours)
+    cutoff = datetime.now(TIMEZONE) - timedelta(hours=hours)
     stats = db.query(TrafficStats).filter(TrafficStats.timestamp >= cutoff).order_by(TrafficStats.timestamp).all()
     
     # Aggregate by hour
@@ -423,7 +459,7 @@ async def get_protocol_stats(
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=hours)
+    cutoff = datetime.now(TIMEZONE) - timedelta(hours=hours)
     stats = db.query(ProtocolStats).filter(ProtocolStats.timestamp >= cutoff).all()
     
     # Aggregate by protocol
@@ -442,7 +478,7 @@ async def get_protocol_stats(
         func.sum(ProtocolStats.count).label("total_count")
     ).filter(
         ProtocolStats.timestamp >= cutoff,
-        ProtocolStats.port != None
+        ProtocolStats.port is not None
     ).group_by(ProtocolStats.port, ProtocolStats.protocol).order_by(func.sum(ProtocolStats.count).desc()).limit(10).all()
     
     return {
@@ -467,7 +503,7 @@ async def get_attack_trends(
     from zoneinfo import ZoneInfo
     from sqlalchemy import func
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(days=days)
+    cutoff = datetime.now(TIMEZONE) - timedelta(days=days)
     
     # Hourly trends
     hourly = db.query(
@@ -490,23 +526,23 @@ async def get_attack_trends(
     ).filter(
         Alert.timestamp >= cutoff,
         Alert.label == "MALICIOUS",
-        Alert.attack_type != None
+        Alert.attack_type is not None
     ).group_by(Alert.attack_type).order_by(func.count(Alert.id).desc()).all()
     
     return {
         "hourly": {
-            "labels": [h.hour for h in hourly],
-            "total": [h.total for h in hourly],
-            "malicious": [h.malicious for h in hourly],
+            "labels": [row[0] for row in hourly],
+            "total": [row[1] for row in hourly],
+            "malicious": [row[2] for row in hourly],
         },
         "daily": {
-            "labels": [d.day for d in daily],
-            "total": [d.total for d in daily],
-            "malicious": [d.malicious for d in daily],
+            "labels": [row[0] for row in daily],
+            "total": [row[1] for row in daily],
+            "malicious": [row[2] for row in daily],
         },
         "attack_types": {
-            "types": [a.attack_type for a in attack_types],
-            "counts": [a.count for a in attack_types],
+            "types": [row[0] for row in attack_types],
+            "counts": [row[1] for row in attack_types],
         },
     }
 
@@ -521,7 +557,7 @@ async def get_geographic_data(
     from zoneinfo import ZoneInfo
     from sqlalchemy import func
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(days=days)
+    cutoff = datetime.now(TIMEZONE) - timedelta(days=days)
     
     # Country distribution
     countries = db.query(
@@ -530,7 +566,7 @@ async def get_geographic_data(
         func.sum(func.case([(Alert.label == "MALICIOUS", 1)], else_=0)).label("attacks")
     ).filter(
         Alert.timestamp >= cutoff,
-        Alert.src_country != None
+        Alert.src_country is not None
     ).group_by(Alert.src_country).order_by(func.count(Alert.id).desc()).limit(20).all()
     
     # City distribution
@@ -541,14 +577,14 @@ async def get_geographic_data(
         func.sum(func.case([(Alert.label == "MALICIOUS", 1)], else_=0)).label("attacks")
     ).filter(
         Alert.timestamp >= cutoff,
-        Alert.src_city != None
+        Alert.src_city is not None
     ).group_by(Alert.src_city, Alert.src_country).order_by(func.count(Alert.id).desc()).limit(20).all()
     
     # Map points (for scatter map)
     map_points = db.query(Alert).filter(
         Alert.timestamp >= cutoff,
-        Alert.src_lat != None,
-        Alert.src_lon != None,
+        Alert.src_lat is not None,
+        Alert.src_lon is not None,
         Alert.label == "MALICIOUS"
     ).all()
     
@@ -583,7 +619,7 @@ async def get_dns_queries(
     query = db.query(DNSQuery)
     
     if filter == "malicious":
-        query = query.filter(DNSQuery.is_malicious == 1)
+        query = query.filter(DNSQuery.is_malicious == True)
     
     total = query.count()
     queries = query.order_by(DNSQuery.timestamp.desc()).offset((page - 1) * limit).limit(limit).all()
@@ -614,7 +650,7 @@ async def get_http_requests(
     query = db.query(HTTPRequest)
     
     if filter == "suspicious":
-        query = query.filter(HTTPRequest.is_suspicious == 1)
+        query = query.filter(HTTPRequest.is_suspicious == True)
     
     total = query.count()
     requests = query.order_by(HTTPRequest.timestamp.desc()).offset((page - 1) * limit).limit(limit).all()
@@ -623,7 +659,7 @@ async def get_http_requests(
     top_hosts = db.query(
         HTTPRequest.host,
         func.count(HTTPRequest.id).label("count")
-    ).filter(HTTPRequest.host != None).group_by(HTTPRequest.host).order_by(func.count(HTTPRequest.id).desc()).limit(10).all()
+    ).filter(HTTPRequest.host is not None).group_by(HTTPRequest.host).order_by(func.count(HTTPRequest.id).desc()).limit(10).all()
     
     # Method distribution
     methods = db.query(
@@ -681,7 +717,7 @@ async def export_csv(
     import io
     from fastapi.responses import StreamingResponse
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(days=days)
+    cutoff = datetime.now(TIMEZONE) - timedelta(days=days)
     alerts = db.query(Alert).filter(Alert.timestamp >= cutoff).order_by(Alert.timestamp.desc()).all()
     
     output = io.StringIO()
@@ -723,11 +759,11 @@ async def export_json(
     from zoneinfo import ZoneInfo
     from fastapi.responses import JSONResponse
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(days=days)
+    cutoff = datetime.now(TIMEZONE) - timedelta(days=days)
     alerts = db.query(Alert).filter(Alert.timestamp >= cutoff).order_by(Alert.timestamp.desc()).all()
     
     return JSONResponse(content={
-        "exported_at": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+        "exported_at": datetime.now(TIMEZONE).isoformat(),
         "days": days,
         "total": len(alerts),
         "alerts": [a.to_dict() for a in alerts],
@@ -748,7 +784,7 @@ async def detect_vpn_tunnels(
     from zoneinfo import ZoneInfo
     from sqlalchemy import func
     
-    cutoff = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=hours)
+    cutoff = datetime.now(TIMEZONE) - timedelta(hours=hours)
     
     # Common VPN ports
     vpn_ports = [1194, 1723, 500, 4500, 1701, 443, 22, 8080, 51820]

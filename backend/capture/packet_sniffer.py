@@ -10,11 +10,11 @@ import asyncio
 import logging
 import threading
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from typing import Optional
 
 from backend.ml.feature_extractor import FlowTracker
 from backend.ml.predict import predictor
+from backend.config import TIMEZONE
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,6 @@ class PacketSniffer:
         from scapy.all import TCP, IP, Raw
         from scapy.layers.dns import DNS, DNSQR
         from datetime import datetime
-        from zoneinfo import ZoneInfo
         
         # Extract DNS queries
         if packet.haslayer(DNS) and packet.haslayer(DNSQR):
@@ -91,7 +90,7 @@ class PacketSniffer:
                     
                     result = {
                         "type": "dns",
-                        "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                        "timestamp": datetime.now(TIMEZONE).isoformat(),
                         "src_ip": packet[IP].src if packet.haslayer(IP) else "",
                         "dst_ip": packet[IP].dst if packet.haslayer(IP) else "",
                         "query_name": query_name,
@@ -101,9 +100,9 @@ class PacketSniffer:
                     
                     # Thread-safe transfer
                     try:
-                        self.loop.call_soon_threadsafe(
-                            asyncio.ensure_future,
+                        asyncio.run_coroutine_threadsafe(
                             self._put_result(result),
+                            self.loop
                         )
                     except RuntimeError:
                         pass
@@ -149,7 +148,7 @@ class PacketSniffer:
                         
                         result = {
                             "type": "http",
-                            "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                            "timestamp": datetime.now(TIMEZONE).isoformat(),
                             "src_ip": packet[IP].src,
                             "dst_ip": packet[IP].dst,
                             "src_port": tcp.sport,
@@ -163,9 +162,9 @@ class PacketSniffer:
                         
                         # Thread-safe transfer
                         try:
-                            self.loop.call_soon_threadsafe(
-                                asyncio.ensure_future,
+                            asyncio.run_coroutine_threadsafe(
                                 self._put_result(result),
+                                self.loop
                             )
                         except RuntimeError:
                             pass
@@ -195,14 +194,15 @@ class PacketSniffer:
                 "protocol": metadata["protocol"],
                 "label": prediction["label"],
                 "confidence": prediction["confidence"],
-                "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                "attack_type": prediction.get("attack_type"),
+                "timestamp": datetime.now(TIMEZONE).isoformat(),
             }
 
             # Thread-safe transfer into the async world
             try:
-                self.loop.call_soon_threadsafe(
-                    asyncio.ensure_future,
+                asyncio.run_coroutine_threadsafe(
                     self._put_result(result),
+                    self.loop
                 )
             except RuntimeError:
                 # Event loop might have closed during shutdown
@@ -215,12 +215,25 @@ class PacketSniffer:
     def start(self) -> None:
         """Blocking call — run from a daemon thread."""
         try:
-            from scapy.all import sniff
+            from scapy.all import sniff, get_if_list
         except ImportError:
             logger.error(
                 "Scapy is not installed. Install it with: pip install scapy"
             )
             return
+
+        # Validate interface exists
+        try:
+            available_interfaces = get_if_list()
+            if self.interface not in available_interfaces:
+                logger.error(
+                    "Interface '%s' not found. Available interfaces: %s",
+                    self.interface,
+                    ", ".join(available_interfaces) if available_interfaces else "none"
+                )
+                return
+        except Exception as e:
+            logger.warning("Could not validate interface: %s", e)
 
         logger.info("Starting packet capture on interface '%s' ...", self.interface)
 
@@ -306,6 +319,9 @@ def analyze_pcap_file(pcap_path: str) -> dict:
                 })
         except Exception:
             pass
+    
+    # Clear tracker to free memory
+    tracker.clear()
     
     return {
         "flow_count": len(completed_flows),

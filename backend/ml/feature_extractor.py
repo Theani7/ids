@@ -511,3 +511,20 @@ class FlowTracker:
             del self.active_flows[key]
 
         return completed
+
+    # ------------------------------------------------------------------
+    def get_all_flows(self) -> List[Dict[str, Any]]:
+        """Return all active flows (for PCAP analysis)."""
+        flows: List[Dict[str, Any]] = []
+        for key, flow in self.active_flows.items():
+            features = flow.compute_features()
+            flows.append({
+                "metadata": flow.metadata,
+                "features": features,
+            })
+        return flows
+
+    # ------------------------------------------------------------------
+    def clear(self) -> None:
+        """Clear all active flows (used after PCAP analysis)."""
+        self.active_flows.clear()

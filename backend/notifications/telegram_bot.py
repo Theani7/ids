@@ -7,8 +7,7 @@ for normal traffic via the Telegram Bot API.
 
 import time
 import logging
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 import httpx
 
@@ -17,6 +16,7 @@ from backend.config import (
     TELEGRAM_CHAT_ID,
     TELEGRAM_COOLDOWN,
     TELEGRAM_NORMAL_INTERVAL,
+    TIMEZONE,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class TelegramNotifier:
         if now - self.last_normal_summary < TELEGRAM_NORMAL_INTERVAL:
             return False
 
-        ist_now = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
+        ist_now = datetime.now(TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
         message = (
             "✅ <b>Traffic Status: NORMAL</b>\n\n"
             f"📦 Flows analyzed: {count}\n"
