@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -12,11 +13,21 @@ if env_path.exists():
 else:
     logger.info(".env file not found, using default configuration")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-MODEL_PATH = os.getenv("MODEL_PATH", "models/ids_model.pkl")
-FEATURE_COLUMNS_PATH = os.getenv("FEATURE_COLUMNS_PATH", "models/feature_columns.pkl")
-NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", "eth0")
+def _get_default_interface() -> str:
+    import psutil
+    interfaces = list(psutil.net_if_addrs().keys())
+    logger.info(f"Available network interfaces: {interfaces}")
+    for iface in interfaces:
+        if iface.lower() in ["wifi", "wi-fi", "ethernet", "lan", "wan"]:
+            return iface
+    if sys.platform == "win32":
+        for iface in interfaces:
+            if not iface.startswith("\\"):
+                return iface
+        return interfaces[0] if interfaces else "\\Device\\NPF_Unknown"
+    return interfaces[0] if interfaces else "eth0"
+
+NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", _get_default_interface())
 FLOW_TIMEOUT = int(os.getenv("FLOW_TIMEOUT", "60"))
 TELEGRAM_COOLDOWN = int(os.getenv("TELEGRAM_COOLDOWN", "10"))
 TELEGRAM_NORMAL_INTERVAL = int(os.getenv("TELEGRAM_NORMAL_INTERVAL", "300"))
