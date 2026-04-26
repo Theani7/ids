@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getGeography } from '../api/client';
-import { Globe, MapPin, Flag } from 'lucide-react';
+import { Globe, MapPin, Flag, Activity } from 'lucide-react';
 
 export default function GeoAttackMap() {
   const [geoData, setGeoData] = useState(null);
@@ -51,6 +51,22 @@ export default function GeoAttackMap() {
       {loading && (
         <div className="text-center py-8 text-netcyan font-mono text-sm animate-pulse">
           Loading geographic data...
+        </div>
+      )}
+
+      {!loading && !geoData && (
+        <div className="text-center py-12 text-[#8b9ab3] font-mono">
+          <Globe className="w-12 h-12 mx-auto mb-4 text-netborder" />
+          <p className="text-lg">No data available</p>
+          <p className="text-sm">Start capturing traffic to see geographic distribution</p>
+        </div>
+      )}
+
+      {!loading && geoData && !geoData.countries?.length && !geoData.cities?.length && !geoData.map_points?.length && (
+        <div className="text-center py-12 text-[#8b9ab3] font-mono">
+          <Globe className="w-12 h-12 mx-auto mb-4 text-netborder" />
+          <p className="text-lg mb-2">No geographic data available</p>
+          <p className="text-sm text-netcyan">Start capturing traffic to see attack origins</p>
         </div>
       )}
 
