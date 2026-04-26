@@ -59,10 +59,9 @@ export default function useWebSocket() {
         if (!mountedRef.current) return;
         setIsConnected(false);
 
-        // Exponential back-off reconnect
         attemptRef.current += 1;
         const delay = Math.min(
-          2000 * attemptRef.current,
+          Math.pow(2, attemptRef.current) * 1000,
           MAX_RECONNECT_DELAY,
         );
         reconnectTimerRef.current = setTimeout(connect, delay);

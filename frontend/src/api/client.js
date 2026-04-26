@@ -120,9 +120,7 @@ export async function getVPNTunnels(hours = 24) {
 export async function uploadPCAP(file) {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post('/api/pcap/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const { data } = await api.post('/api/pcap/upload', formData);
   return data;
 }
 

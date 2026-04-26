@@ -248,22 +248,22 @@ async def get_interfaces():
     import sys
     try:
         raw_interfaces = list(psutil.net_if_addrs().keys())
+        friendly_names = {
+            "en0": "Wi-Fi (en0)",
+            "en1": "Ethernet (en1)",
+            "en2": "Ethernet (en2)",
+            "en3": "Ethernet (en3)",
+            "en4": "Ethernet (en4)",
+            "lo0": "Loopback (lo0)",
+        }
         if sys.platform == "darwin":
-            friendly_names = {
-                "en0": "Wi-Fi (en0)",
-                "en1": "Ethernet (en1)",
-                "en2": "Ethernet (en2)",
-                "en3": "Ethernet (en3)",
-                "en4": "Ethernet (en4)",
-                "lo0": "Loopback (lo0)",
-            }
-            interfaces = [friendly_names.get(i, i) for i in raw_interfaces]
+            interfaces = [{"raw": i, "friendly": friendly_names.get(i, i)} for i in raw_interfaces]
         elif sys.platform == "win32":
-            interfaces = raw_interfaces
+            interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces]
         else:
-            interfaces = raw_interfaces
+            interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces]
     except Exception:
-        interfaces = ["eth0", "lo"]
+        interfaces = [{"raw": "eth0", "friendly": "eth0"}, {"raw": "lo", "friendly": "lo"}]
     return {"interfaces": interfaces}
 
 

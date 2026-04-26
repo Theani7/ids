@@ -5,15 +5,19 @@ import { getInterfaces } from '../api/client';
 export default function InterfaceSelector({ onStart, onStop, capturing }) {
   const [interfaces, setInterfaces] = useState([]);
   const [selected, setSelected] = useState('');
+  const [selectedFriendly, setSelectedFriendly] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
-        const ifaces = await getInterfaces();
-        setInterfaces(ifaces);
-        if (ifaces.length > 0) setSelected(ifaces[0]);
+        const data = await getInterfaces();
+        setInterfaces(data);
+        if (data.length > 0) {
+          setSelected(data[0].raw);
+          setSelectedFriendly(data[0].friendly);
+        }
       } catch {
         setError('Could not load interfaces');
       }
@@ -44,6 +48,12 @@ export default function InterfaceSelector({ onStart, onStop, capturing }) {
     }
   };
 
+  const handleInterfaceChange = (e) => {
+    const selectedInterface = interfaces.find(i => i.raw === e.target.value);
+    setSelected(e.target.value);
+    setSelectedFriendly(selectedInterface?.friendly || e.target.value);
+  };
+
   return (
     <div className="card p-4">
       <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
@@ -53,13 +63,13 @@ export default function InterfaceSelector({ onStart, onStop, capturing }) {
 
       <select
         value={selected}
-        onChange={(e) => setSelected(e.target.value)}
+        onChange={handleInterfaceChange}
         disabled={capturing}
         className="input mb-3"
       >
         {interfaces.length === 0 && <option value="">No interfaces found</option>}
         {interfaces.map((iface) => (
-          <option key={iface} value={iface}>{iface}</option>
+          <option key={iface.raw} value={iface.raw}>{iface.friendly}</option>
         ))}
       </select>
 
@@ -86,7 +96,7 @@ export default function InterfaceSelector({ onStart, onStop, capturing }) {
       {capturing && (
         <div className="mt-3 flex items-center gap-2 text-sm text-netgreen">
           <span className="w-2 h-2 rounded-full bg-netgreen animate-pulse" />
-          Capturing on <span className="font-mono text-netcyan">{selected}</span>
+          Capturing on <span className="font-mono text-netcyan">{selectedFriendly}</span>
         </div>
       )}
 
