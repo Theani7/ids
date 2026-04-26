@@ -37,11 +37,12 @@ def _get_geolocation_sync(ip: str) -> dict:
     if cached is not None:
         return cached
     
-    # IP-API free tier does not require an API key
-    url = f"http://ip-api.com/json/{ip}?fields=status,message,country,city,lat,lon"
+    # IP-API free tier does not require an API key (HTTPS for Windows compatibility)
+    url = f"https://ip-api.com/json/{ip}?fields=status,message,country,city,lat,lon"
     try:
-        with httpx.Client(timeout=3) as client:
+        with httpx.Client(timeout=5, follow_redirects=True) as client:
             resp = client.get(url)
+            logger.info(f"GeoAPI response for {ip}: status={resp.status_code}")
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("status") == "success":
@@ -52,9 +53,14 @@ def _get_geolocation_sync(ip: str) -> dict:
                         "city": data.get("city", "Unknown")
                     }
                     _geolocation_cache.set(ip, result)
+                    logger.info(f"Geolocation found for {ip}: {result['city']}, {result['country']}")
                     return result
                 else:
                     logger.warning(f"Geolocation API failed for IP {ip}: {data.get('message')}")
+            else:
+                logger.warning(f"Geolocation API returned {resp.status_code} for {ip}")
+    except httpx.RequestError as e:
+        logger.error(f"Geolocation request network error for {ip}: {e}")
     except Exception as e:
         logger.error(f"Geolocation request failed for {ip}: {e}")
         

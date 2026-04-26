@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import threading
-from typing import List
+from typing import List, Optional
 
 import psutil
 import pandas as pd
