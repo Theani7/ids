@@ -14,7 +14,7 @@ import {
   Cell,
 } from 'recharts';
 import { getTrends } from '../api/client';
-import { TrendingUp, Calendar, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Calendar, AlertTriangle, Activity } from 'lucide-react';
 
 const COLORS = ['#ff0040', '#00f0ff', '#00ff88', '#ffaa00', '#aa00ff', '#ff00aa'];
 
@@ -40,7 +40,7 @@ export default function AttackTrends() {
   };
 
   const prepareHourlyData = () => {
-    if (!trendData?.hourly) return [];
+    if (!trendData?.hourly?.labels) return [];
     return trendData.hourly.labels.map((label, i) => ({
       time: label.slice(11, 16),
       total: trendData.hourly.total[i] || 0,
@@ -49,7 +49,7 @@ export default function AttackTrends() {
   };
 
   const prepareDailyData = () => {
-    if (!trendData?.daily) return [];
+    if (!trendData?.daily?.labels) return [];
     return trendData.daily.labels.map((label, i) => ({
       date: label.slice(5),
       total: trendData.daily.total[i] || 0,
@@ -58,11 +58,11 @@ export default function AttackTrends() {
   };
 
   const prepareAttackTypeData = () => {
-    if (!trendData?.attack_types) return [];
+    if (!trendData?.attack_types?.types) return [];
     return trendData.attack_types.types.map((type, i) => ({
       name: type || 'Unknown',
       value: trendData.attack_types.counts[i] || 0,
-    }));
+    })).filter(e => e.value > 0);
   };
 
   const calculateStats = () => {
@@ -70,21 +70,21 @@ export default function AttackTrends() {
     const totalFlows = trendData.daily?.total?.reduce((a, b) => a + b, 0) || 0;
     const totalAttacks = trendData.daily?.malicious?.reduce((a, b) => a + b, 0) || 0;
     const attackRate = totalFlows > 0 ? ((totalAttacks / totalFlows) * 100).toFixed(2) : 0;
-    const peakHour = trendData.hourly?.total?.indexOf(Math.max(...(trendData.hourly?.total || [])));
+    const peakIdx = trendData.hourly?.total?.indexOf(Math.max(...(trendData.hourly?.total || [0])));
     
     return {
       totalFlows,
       totalAttacks,
       attackRate,
-      peakHour: peakHour >= 0 ? trendData.hourly?.labels[peakHour]?.slice(11, 16) : '--:--',
+      peakHour: peakIdx >= 0 ? trendData.hourly?.labels[peakIdx]?.slice(11, 16) : '--:--',
     };
   };
 
   const stats = calculateStats();
+  const hasData = stats && stats.totalFlows > 0;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-mono uppercase tracking-[0.2em] text-[#8b9ab3] flex items-center gap-2">
           <TrendingUp className="w-4 h-4" />
@@ -103,14 +103,29 @@ export default function AttackTrends() {
       </div>
 
       {loading && (
-        <div className="text-center py-8 text-netcyan font-mono text-sm animate-pulse">
-          Analyzing trends...
+        <div className="text-center py-12 text-netcyan font-mono text-sm animate-pulse">
+          Analyzing traffic patterns...
         </div>
       )}
 
-      {!loading && trendData && stats && (
+      {!loading && !trendData && (
+        <div className="text-center py-12 text-[#8b9ab3] font-mono">
+          <Activity className="w-12 h-12 mx-auto mb-4 text-netborder" />
+          <p className="text-lg">No data available</p>
+          <p className="text-sm">Start capturing network traffic to see trends</p>
+        </div>
+      )}
+
+      {!loading && trendData && stats && !hasData && (
+        <div className="text-center py-12 text-[#8b9ab3] font-mono">
+          <Activity className="w-12 h-12 mx-auto mb-4 text-netborder" />
+          <p className="text-lg mb-2">No traffic data available</p>
+          <p className="text-sm text-netcyan">Start capturing traffic to see attack trends</p>
+        </div>
+      )}
+
+      {!loading && hasData && (
         <>
-          {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="border border-netborder bg-netsurface rounded p-3">
               <p className="text-xs font-mono text-[#8b9ab3] uppercase">Total Flows</p>
@@ -130,7 +145,6 @@ export default function AttackTrends() {
             </div>
           </div>
 
-          {/* Hourly Trend Chart */}
           <div className="border border-netborder bg-netsurface rounded p-4">
             <h3 className="text-xs font-mono uppercase tracking-wider text-[#8b9ab3] mb-3 flex items-center gap-2">
               <Calendar className="w-3 h-3" />
@@ -150,28 +164,13 @@ export default function AttackTrends() {
                       fontSize: '12px',
                     }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    stroke="#00f0ff"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Total Flows"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="malicious"
-                    stroke="#ff0040"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Attacks"
-                  />
+                  <Line type="monotone" dataKey="total" stroke="#00f0ff" strokeWidth={2} dot={false} name="Total Flows" />
+                  <Line type="monotone" dataKey="malicious" stroke="#ff0040" strokeWidth={2} dot={false} name="Attacks" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Daily Trend & Attack Types */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="border border-netborder bg-netsurface rounded p-4">
               <h3 className="text-xs font-mono uppercase tracking-wider text-[#8b9ab3] mb-3">
@@ -203,40 +202,48 @@ export default function AttackTrends() {
                 <AlertTriangle className="w-3 h-3" />
                 Attack Types
               </h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={prepareAttackTypeData()}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={60}
-                      dataKey="value"
-                      label={({ name }) => name.slice(0, 8)}
-                      labelLine={false}
-                    >
-                      {prepareAttackTypeData().map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#0a0f1c',
-                        border: '1px solid #1a2a3a',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {prepareAttackTypeData().map((entry, i) => (
-                  <span key={entry.name} className="text-xs font-mono" style={{ color: COLORS[i % COLORS.length] }}>
-                    ● {entry.name}: {entry.value}
-                  </span>
-                ))}
-              </div>
+              {prepareAttackTypeData().length > 0 ? (
+                <>
+                  <div className="h-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={prepareAttackTypeData()}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={60}
+                          dataKey="value"
+                          label={({ name }) => name.slice(0, 10)}
+                          labelLine={false}
+                        >
+                          {prepareAttackTypeData().map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#0a0f1c',
+                            border: '1px solid #1a2a3a',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {prepareAttackTypeData().map((entry, i) => (
+                      <span key={entry.name} className="text-xs font-mono" style={{ color: COLORS[i % COLORS.length] }}>
+                        ● {entry.name}: {entry.value}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="h-40 flex items-center justify-center text-[#8b9ab3] font-mono text-sm">
+                  No attack type data available
+                </div>
+              )}
             </div>
           </div>
         </>
