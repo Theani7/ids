@@ -28,9 +28,13 @@ def _get_default_interface() -> str:
     return interfaces[0] if interfaces else "eth0"
 
 NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", _get_default_interface())
+MODEL_PATH = os.getenv("MODEL_PATH", "models/ids_model.pkl")
+FEATURE_COLUMNS_PATH = os.getenv("FEATURE_COLUMNS_PATH", "models/feature_columns.pkl")
 FLOW_TIMEOUT = int(os.getenv("FLOW_TIMEOUT", "60"))
 TELEGRAM_COOLDOWN = int(os.getenv("TELEGRAM_COOLDOWN", "10"))
 TELEGRAM_NORMAL_INTERVAL = int(os.getenv("TELEGRAM_NORMAL_INTERVAL", "300"))
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-for-intruml-development")
 ALGORITHM = "HS256"
