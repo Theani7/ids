@@ -17,6 +17,14 @@ def _get_default_interface() -> str:
     import psutil
     interfaces = list(psutil.net_if_addrs().keys())
     logger.info(f"Available network interfaces: {interfaces}")
+    
+    if sys.platform == "darwin":
+        if "en0" in interfaces:
+            return "en0"
+        for iface in ["en1", "en2", "en3"]:
+            if iface in interfaces:
+                return iface
+    
     for iface in interfaces:
         if iface.lower() in ["wifi", "wi-fi", "ethernet", "lan", "wan"]:
             return iface
