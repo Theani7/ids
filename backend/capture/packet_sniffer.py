@@ -272,6 +272,7 @@ def analyze_pcap_file(pcap_path: str) -> dict:
     
     try:
         packets = rdpcap(pcap_path)
+        logger.info(f"Loaded {len(packets)} packets from PCAP")
     except Exception as e:
         logger.error(f"Failed to read PCAP file: {e}")
         raise
@@ -279,27 +280,27 @@ def analyze_pcap_file(pcap_path: str) -> dict:
     tracker = FlowTracker()
     protocols = Counter()
     top_talkers = Counter()
+    skipped = 0
     
-    # Process all packets
     for packet in packets:
         try:
             tracker.add_packet(packet)
             
-            # Count protocols
             if packet.haslayer("IP"):
                 proto = "TCP" if packet.haslayer("TCP") else "UDP" if packet.haslayer("UDP") else "OTHER"
                 protocols[proto] += 1
-                
-                # Track top talkers
-                src_ip = packet["IP"].src
-                top_talkers[src_ip] += 1
+                top_talkers[packet["IP"].src] += 1
         except Exception:
-            pass
+            skipped += 1
     
-    # Get completed flows and classify
+    logger.info(f"Processed packets, skipped {skipped}, active flows: {len(tracker.active_flows)}")
+    
     completed_flows = tracker.get_all_flows()
+    logger.info(f"Found {len(completed_flows)} total flows")
+    
     malicious_count = 0
     alerts = []
+    model_loaded = predictor.is_loaded
     
     for flow in completed_flows:
         try:
@@ -317,18 +318,17 @@ def analyze_pcap_file(pcap_path: str) -> dict:
                     "protocol": metadata["protocol"],
                     "confidence": prediction["confidence"],
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Flow prediction error: {e}")
     
-    # Clear tracker to free memory
+    logger.info(f"PCAP analysis complete: {malicious_count} malicious out of {len(completed_flows)} flows (model loaded: {model_loaded})")
+    
     tracker.clear()
     
     return {
         "flow_count": len(completed_flows),
         "malicious_count": malicious_count,
         "protocols": dict(protocols),
-        "top_talkers": [
-            {"ip": ip, "packets": count} for ip, count in top_talkers.most_common(10)
-        ],
-        "alerts": alerts[:50],  # Limit to top 50 alerts
+        "top_talkers": [{"ip": ip, "packets": count} for ip, count in top_talkers.most_common(10)],
+        "alerts": alerts[:50],
     }
