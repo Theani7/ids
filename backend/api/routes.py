@@ -361,13 +361,11 @@ async def get_stats(db: Session = Depends(get_db)):
 
 @router.post("/api/batch-analyze")
 async def batch_analyze(file: UploadFile = File(...), request: Request = None):
-    # Rate limiting: max 5 batch uploads per minute
     if request:
         client_ip = request.client.host if request.client else "unknown"
         if not check_rate_limit(f"batch:{client_ip}", max_requests=5, window_seconds=60):
             raise HTTPException(status_code=429, detail="Too many batch requests. Please wait.")
     
-    # Handle CSV upload and analysis
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
     try:
@@ -375,16 +373,13 @@ async def batch_analyze(file: UploadFile = File(...), request: Request = None):
         df = pd.read_csv(io.BytesIO(contents), encoding="utf-8", encoding_errors="replace", low_memory=False)
         df.columns = df.columns.str.strip()
         
-        # We don't need label column for predicting, but if it's there we should ignore it
-        label_col = None
-        for col in df.columns:
-            if col.strip().lower() == "label":
-                label_col = col
-                break
-                
+        logger.info(f"Batch analysis: loaded {len(df)} rows, columns: {list(df.columns)[:10]}...")
+        
+        if len(df) == 0:
+            raise HTTPException(status_code=400, detail="CSV file is empty")
+        
         results = predictor.predict_batch(df)
         
-        # Optionally send a Telegram summary alert if threats were found
         if results.get("malicious", 0) > 0:
             msg = (
                 f"🚨 <b>BATCH ANALYSIS INTRUSION WARNING</b>\n\n"
@@ -397,6 +392,8 @@ async def batch_analyze(file: UploadFile = File(...), request: Request = None):
             asyncio.create_task(notifier._send_message(msg))
             
         return {"status": "success", "results": results}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Batch processing error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
