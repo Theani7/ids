@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/live';
+const getWsUrl = () => {
+  const envUrl = import.meta.env.VITE_WS_URL;
+  if (envUrl) return envUrl;
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/ws/live`;
+};
+
+const WS_URL = getWsUrl();
 const MAX_ALERTS = 100;
 const MAX_RECONNECT_DELAY = 30000;
 

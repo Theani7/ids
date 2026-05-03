@@ -1,8 +1,30 @@
 import httpx
 import logging
 import threading
+import time
 
 logger = logging.getLogger(__name__)
+
+# Simple rate limiter state
+_last_request_time = 0
+_request_count_in_minute = 0
+_rate_limit_lock = threading.Lock()
+
+def _check_rate_limit() -> bool:
+    """Returns True if request is allowed, False if rate limited."""
+    global _last_request_time, _request_count_in_minute
+    with _rate_limit_lock:
+        now = time.time()
+        # Reset count every minute
+        if now - _last_request_time > 60:
+            _request_count_in_minute = 0
+            _last_request_time = now
+        
+        if _request_count_in_minute >= 45:
+            return False
+        
+        _request_count_in_minute += 1
+        return True
 
 # Thread-safe cache using a lock
 class ThreadSafeCache:
@@ -37,6 +59,11 @@ def _get_geolocation_sync(ip: str) -> dict:
     if cached is not None:
         return cached
     
+    # Check rate limit before calling external API
+    if not _check_rate_limit():
+        logger.warning(f"Geolocation rate limit reached. Skipping IP {ip}")
+        return {"lat": 0.0, "lon": 0.0, "country": "Rate Limited", "city": "N/A"}
+
     # IP-API free tier does not require an API key (HTTPS for Windows compatibility)
     url = f"https://ip-api.com/json/{ip}?fields=status,message,country,city,lat,lon"
     try:

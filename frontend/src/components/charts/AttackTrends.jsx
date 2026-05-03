@@ -13,7 +13,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { getTrends } from '../api/client';
+import { getTrends } from '../../services/api';
 import { TrendingUp, Calendar, AlertTriangle, Activity } from 'lucide-react';
 
 const COLORS = ['#ff0040', '#00f0ff', '#00ff88', '#ffaa00', '#aa00ff', '#ff00aa'];

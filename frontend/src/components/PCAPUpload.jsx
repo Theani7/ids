@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { uploadPCAP } from '../api/client';
+import { uploadPCAP } from '../services/api';
 import { Upload, File, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 
 export default function PCAPUpload() {

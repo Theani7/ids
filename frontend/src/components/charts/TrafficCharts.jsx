@@ -13,7 +13,7 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
-import { getTrafficStats, getProtocolStats } from '../api/client';
+import { getTrafficStats, getProtocolStats } from '../../services/api';
 import { Activity, Layers, Server } from 'lucide-react';
 
 const COLORS = ['#00f0ff', '#ff0040', '#00ff88', '#ffaa00', '#aa00ff'];

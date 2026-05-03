@@ -34,6 +34,11 @@ from backend.api.schemas import (
     DNSQueryResponse,
     HTTPRequestResponse,
 )
+from backend.services.result_handler import (
+    process_flow_result,
+    process_dns_result,
+    process_http_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ sniffer_thread: Optional[threading.Thread] = None
 result_queue: asyncio.Queue = asyncio.Queue()
 websocket_clients: List[WebSocket] = []
 capturing: bool = False
-notifier = TelegramNotifier()
+capture_lock: threading.Lock = threading.Lock()
 shutdown_event: asyncio.Event = asyncio.Event()
 
 # ---------------------------------------------------------------------------
@@ -57,7 +62,7 @@ shutdown_event: asyncio.Event = asyncio.Event()
 
 
 async def broadcast_results():
-    """Infinite loop: drain *result_queue*, persist, notify, broadcast."""
+    """Infinite loop: drain *result_queue*, and delegate processing to services."""
     logger.info("Background broadcast task started")
     while not shutdown_event.is_set():
         try:
@@ -73,14 +78,13 @@ async def broadcast_results():
 
         result_type = result.get("type", "flow")
 
-        # Handle different result types
+        # Delegate to specialized service handlers
         if result_type == "dns":
-            await _persist_dns(result)
+            await process_dns_result(result, websocket_clients)
         elif result_type == "http":
-            await _persist_http(result)
+            await process_http_result(result, websocket_clients)
         else:
-            # Flow/Alert result (existing behavior)
-            await _persist_flow(result)
+            await process_flow_result(result, websocket_clients)
 
     logger.info("Background broadcast task stopped")
 
@@ -90,133 +94,6 @@ async def shutdown_broadcast_task():
     logger.info("Initiating broadcast task shutdown...")
     shutdown_event.set()
     await asyncio.sleep(1.5)
-
-
-async def _persist_dns(result: dict) -> None:
-    """Persist DNS query to database."""
-    from backend.db.database import SessionLocal
-    from backend.config import TIMEZONE
-    from datetime import datetime
-    
-    db = SessionLocal()
-    try:
-        timestamp = result.get("timestamp")
-        if isinstance(timestamp, str):
-            timestamp = datetime.fromisoformat(timestamp)
-        
-        dns = DNSQuery(
-            timestamp=timestamp or datetime.now(TIMEZONE),
-            src_ip=result.get("src_ip", ""),
-            dst_ip=result.get("dst_ip", ""),
-            query_name=result.get("query_name", ""),
-            query_type=result.get("query_type", ""),
-            is_malicious=result.get("is_malicious", False),
-        )
-        db.add(dns)
-        db.commit()
-        logger.info(f"Saved DNS: {result.get('query_name')} ({result.get('query_type')})")
-    except Exception as exc:
-        logger.error(f"DNS persist error: {exc}")
-    finally:
-        db.close()
-
-
-async def _persist_http(result: dict) -> None:
-    """Persist HTTP request to database."""
-    from backend.db.database import SessionLocal
-    from backend.config import TIMEZONE
-    from datetime import datetime
-    
-    db = SessionLocal()
-    try:
-        timestamp = result.get("timestamp")
-        if isinstance(timestamp, str):
-            timestamp = datetime.fromisoformat(timestamp)
-        
-        http = HTTPRequest(
-            timestamp=timestamp or datetime.now(TIMEZONE),
-            src_ip=result.get("src_ip", ""),
-            dst_ip=result.get("dst_ip", ""),
-            src_port=result.get("src_port", 0),
-            dst_port=result.get("dst_port", 0),
-            method=result.get("method", ""),
-            host=result.get("host", ""),
-            uri=result.get("uri", ""),
-            user_agent=result.get("user_agent", ""),
-            is_suspicious=result.get("is_suspicious", False),
-        )
-        db.add(http)
-        db.commit()
-        logger.info(f"Saved HTTP: {result.get('method')} {result.get('host')}{result.get('uri', '')[:30]}")
-    except Exception as exc:
-        logger.error(f"HTTP persist error: {exc}")
-    finally:
-        db.close()
-
-
-async def _persist_flow(result: dict) -> None:
-    """Persist flow result as Alert and broadcast via WebSocket."""
-    # 1. Geolocation Injection
-    from backend.ml.geolocation import get_geolocation_for_ip
-    geo_data = await get_geolocation_for_ip(result.get("src_ip", ""))
-    result["src_lat"] = geo_data["lat"]
-    result["src_lon"] = geo_data["lon"]
-    result["src_country"] = geo_data["country"]
-    result["src_city"] = geo_data["city"]
-
-    # 2. Persist to DB
-    from backend.db.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        alert = Alert(
-            src_ip=result.get("src_ip", ""),
-            dst_ip=result.get("dst_ip", ""),
-            src_port=result.get("src_port", 0),
-            dst_port=result.get("dst_port", 0),
-            protocol=result.get("protocol", ""),
-            src_lat=result.get("src_lat"),
-            src_lon=result.get("src_lon"),
-            src_country=result.get("src_country"),
-            src_city=result.get("src_city"),
-            label=result.get("label", "NORMAL"),
-            confidence=result.get("confidence", 0.0),
-            attack_type=result.get("attack_type"),
-        )
-        db.add(alert)
-        db.commit()
-        result["id"] = alert.id
-        if alert.timestamp:
-            result["timestamp"] = alert.timestamp.isoformat()
-    except Exception as exc:
-        logger.error("DB persist error: %s", exc)
-    finally:
-        db.close()
-
-    # 3. Telegram notification (only for malicious flows)
-    if result.get("label") == "MALICIOUS":
-        try:
-            await notifier.notify(result)
-        except Exception as exc:
-            logger.debug("Telegram notification error: %s", exc)
-
-    # 4. WebSocket broadcast
-    disconnected: List[WebSocket] = []
-    payload = json.dumps(result)
-    clients_snapshot = list(websocket_clients)
-    for ws in clients_snapshot:
-        try:
-            if ws in websocket_clients:
-                await ws.send_text(payload)
-        except Exception:
-            disconnected.append(ws)
-
-    for ws in disconnected:
-        try:
-            if ws in websocket_clients:
-                websocket_clients.remove(ws)
-        except ValueError:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -271,28 +148,29 @@ async def get_interfaces():
 async def start_capture(body: CaptureStartRequest, request: Request):
     global sniffer, sniffer_thread, capturing
 
-    # Rate limiting: max 10 capture starts per minute
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(f"capture:{client_ip}", max_requests=10, window_seconds=60):
-        raise HTTPException(status_code=429, detail="Too many capture requests. Please wait.")
+    with capture_lock:
+        if capturing:
+            return {"status": "already_running", "interface": sniffer.interface if sniffer else ""}
 
-    if capturing:
-        return {"status": "already_running", "interface": sniffer.interface if sniffer else ""}
+        # Rate limiting: max 10 capture starts per minute
+        client_ip = request.client.host if request.client else "unknown"
+        if not check_rate_limit(f"capture:{client_ip}", max_requests=10, window_seconds=60):
+            raise HTTPException(status_code=429, detail="Too many capture requests. Please wait.")
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-    
-    sniffer = PacketSniffer(
-        interface=body.interface,
-        result_queue=result_queue,
-        loop=loop,
-    )
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+        
+        sniffer = PacketSniffer(
+            interface=body.interface,
+            result_queue=result_queue,
+            loop=loop,
+        )
 
-    sniffer_thread = threading.Thread(target=sniffer.start, daemon=True)
-    sniffer_thread.start()
-    capturing = True
+        sniffer_thread = threading.Thread(target=sniffer.start, daemon=True)
+        sniffer_thread.start()
+        capturing = True
 
     return {"status": "started", "interface": body.interface}
 
@@ -301,16 +179,17 @@ async def start_capture(body: CaptureStartRequest, request: Request):
 async def stop_capture():
     global sniffer, sniffer_thread, capturing
 
-    if not capturing or sniffer is None:
-        return {"status": "not_running"}
+    with capture_lock:
+        if not capturing or sniffer is None:
+            return {"status": "not_running"}
 
-    sniffer.stop()
-    if sniffer_thread and sniffer_thread.is_alive():
-        sniffer_thread.join(timeout=5)
+        sniffer.stop()
+        if sniffer_thread and sniffer_thread.is_alive():
+            sniffer_thread.join(timeout=5)
 
-    capturing = False
-    sniffer = None
-    sniffer_thread = None
+        capturing = False
+        sniffer = None
+        sniffer_thread = None
 
     return {"status": "stopped"}
 
@@ -368,35 +247,68 @@ async def batch_analyze(file: UploadFile = File(...), request: Request = None):
     
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    
+    # Limit file size to 100MB
+    MAX_SIZE = 100 * 1024 * 1024
+    
+    import tempfile
+    import os
+    
+    temp_path = None
     try:
-        contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents), encoding="utf-8", encoding_errors="replace", low_memory=False)
-        df.columns = df.columns.str.strip()
+        # Save to temp file in chunks to avoid memory spike
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+            temp_path = tmp.name
+            size = 0
+            while chunk := await file.read(1024 * 1024):  # 1MB chunks
+                size += len(chunk)
+                if size > MAX_SIZE:
+                    tmp.close()
+                    os.unlink(temp_path)
+                    raise HTTPException(status_code=413, detail="File too large (max 100MB)")
+                tmp.write(chunk)
         
-        logger.info(f"Batch analysis: loaded {len(df)} rows, columns: {list(df.columns)[:10]}...")
+        # Process in chunks using Pandas
+        total_results = {"total": 0, "malicious": 0, "normal": 0, "attack_types": {}}
         
-        if len(df) == 0:
-            raise HTTPException(status_code=400, detail="CSV file is empty")
+        # Use chunksize to process large CSVs efficiently
+        for chunk_df in pd.read_csv(temp_path, encoding="utf-8", encoding_errors="replace", low_memory=False, chunksize=10000):
+            chunk_df.columns = chunk_df.columns.str.strip()
+            if len(chunk_df) == 0:
+                continue
+                
+            chunk_results = predictor.predict_batch(chunk_df)
+            
+            total_results["total"] += chunk_results["total"]
+            total_results["malicious"] += chunk_results["malicious"]
+            total_results["normal"] += chunk_results["normal"]
+            
+            for atype, count in chunk_results["attack_types"].items():
+                total_results["attack_types"][atype] = total_results["attack_types"].get(atype, 0) + count
         
-        results = predictor.predict_batch(df)
-        
-        if results.get("malicious", 0) > 0:
+        if total_results["total"] == 0:
+            raise HTTPException(status_code=400, detail="CSV file is empty or invalid")
+            
+        if total_results["malicious"] > 0:
             msg = (
                 f"🚨 <b>BATCH ANALYSIS INTRUSION WARNING</b>\n\n"
                 f"📁 File: {file.filename}\n"
-                f"🛑 Malicious Flows Detected: {results['malicious']}\n"
-                f"✅ Normal Flows: {results['normal']}\n\n"
+                f"🛑 Malicious Flows Detected: {total_results['malicious']}\n"
+                f"✅ Normal Flows: {total_results['normal']}\n\n"
                 f"Review the IntruML Dashboard for details."
             )
             import asyncio
             asyncio.create_task(notifier._send_message(msg))
             
-        return {"status": "success", "results": results}
+        return {"status": "success", "results": total_results}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Batch processing error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 
 # ---------------------------------------------------------------------------

@@ -131,6 +131,9 @@ class FlowData:
         self.src_port = first_packet.src_port
         self.dst_port = first_packet.dst_port
         self.protocol = first_packet.protocol
+        
+        # Numeric protocol for ML model (TCP=6, UDP=17, etc.)
+        self.protocol_num = 6 if self.protocol == "TCP" else 17 if self.protocol == "UDP" else 0
 
         # Direction: forward == same direction as the first packet
         self.fwd_packets: List[PacketInfo] = []
@@ -295,6 +298,9 @@ class FlowData:
         flow_duration_sec = safe_div(flow_duration, 1e6)
 
         features: Dict[str, float] = {
+            "Source Port": self.src_port,
+            "Destination Port": self.dst_port,
+            "Protocol": self.protocol_num,
             "Flow Duration": flow_duration,
             "Total Fwd Packets": total_fwd,
             "Total Backward Packets": total_bwd,

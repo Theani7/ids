@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { UploadCloud, FileType, CheckCircle, AlertTriangle } from 'lucide-react';
-import { batchAnalyze } from '../api/client';
-import StatCard from '../components/StatCard';
+import { batchAnalyze } from '../services/api';
+import StatCard from '../components/ui/StatCard';
 
 export default function BatchAnalyzer() {
   const [file, setFile] = useState(null);

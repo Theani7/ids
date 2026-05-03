@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, TrendingUp, Globe, Download } from 'lucide-react';
-import TrafficCharts from '../components/TrafficCharts';
-import AttackTrends from '../components/AttackTrends';
+import TrafficCharts from '../components/charts/TrafficCharts';
+import AttackTrends from '../components/charts/AttackTrends';
 import GeoAttackMap from '../components/GeoAttackMap';
 import ExportReports from '../components/ExportReports';
 

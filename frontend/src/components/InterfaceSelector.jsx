@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Play, Square, Wifi, AlertCircle } from 'lucide-react';
-import { getInterfaces } from '../api/client';
+import { getInterfaces } from '../services/api';
 
 export default function InterfaceSelector({ onStart, onStop, capturing }) {
   const [interfaces, setInterfaces] = useState([]);

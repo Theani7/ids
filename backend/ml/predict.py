@@ -77,22 +77,20 @@ class IDSPredictor:
                 "attack_type": None,
             }
 
-        # Build a single-row DataFrame
-        df = pd.DataFrame([flow_features])
-
-        # Align columns to training order — missing cols filled with 0
+        # Extract features in the correct order as a NumPy array
+        features_list = []
         for col in self.feature_columns:
-            if col not in df.columns:
-                df[col] = 0.0
+            features_list.append(float(flow_features.get(col, 0.0)))
+        
+        import numpy as np
+        X = np.array([features_list], dtype=np.float32)
 
-        df = df[self.feature_columns]
+        # Replace any NaN/Inf with 0
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # Replace any residual NaN/Inf
-        df.fillna(0, inplace=True)
-        df.replace([float("inf"), float("-inf")], 0, inplace=True)
-
-        raw_pred = int(self.model.predict(df)[0])
-        proba = self.model.predict_proba(df)[0]
+        # Use the model directly on the NumPy array
+        raw_pred = int(self.model.predict(X)[0])
+        proba = self.model.predict_proba(X)[0]
 
         # Confidence = probability of the predicted class
         confidence = round(float(proba[raw_pred]), 4)

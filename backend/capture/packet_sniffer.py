@@ -54,17 +54,32 @@ class PacketSniffer:
         try:
             self._packet_count += 1
             
-            # Log every 100 packets to verify capture is working
+            # Log every 5 seconds to verify capture is working
             now = datetime.now()
             if (now - self._last_log_time).seconds >= 5:
                 logger.info(f"Captured {self._packet_count} packets on {self.interface}")
                 self._last_log_time = now
             
+            # Fast operation: just add to tracker
             self.tracker.add_packet(packet)
-            self._check_completed_flows()
+            
+            # Extract DNS/HTTP (also keep this relatively fast)
             self._extract_dns_http(packet)
         except Exception as exc:
             logger.debug("Error processing packet: %s", exc)
+
+    def _periodic_check(self) -> None:
+        """Runs in a separate thread to periodically check for completed flows."""
+        logger.info("Periodic flow checker started")
+        while not self._stop_event.is_set():
+            try:
+                self._check_completed_flows()
+            except Exception as exc:
+                logger.error("Error in periodic flow check: %s", exc)
+            
+            # Sleep for a bit to avoid CPU hogging
+            self._stop_event.wait(timeout=1.0)
+        logger.info("Periodic flow checker stopped")
 
     def _extract_dns_http(self, packet) -> None:
         """Extract DNS queries and HTTP requests from packets."""
@@ -222,6 +237,10 @@ class PacketSniffer:
             )
             return
 
+        # Start periodic check thread
+        checker_thread = threading.Thread(target=self._periodic_check, daemon=True)
+        checker_thread.start()
+
         # Validate interface exists
         try:
             available_interfaces = get_if_list()
@@ -262,38 +281,38 @@ class PacketSniffer:
 
 
 def analyze_pcap_file(pcap_path: str) -> dict:
-    """Analyze a PCAP file and return statistics."""
-    from scapy.all import rdpcap
+    """Analyze a PCAP file using streaming to save memory."""
+    from scapy.all import PcapReader
     from collections import Counter
     from backend.ml.feature_extractor import FlowTracker
     from backend.ml.predict import predictor
     
-    logger.info(f"Analyzing PCAP file: {pcap_path}")
-    
-    try:
-        packets = rdpcap(pcap_path)
-        logger.info(f"Loaded {len(packets)} packets from PCAP")
-    except Exception as e:
-        logger.error(f"Failed to read PCAP file: {e}")
-        raise
+    logger.info(f"Analyzing PCAP file (streaming): {pcap_path}")
     
     tracker = FlowTracker()
     protocols = Counter()
     top_talkers = Counter()
+    packet_count = 0
     skipped = 0
     
-    for packet in packets:
-        try:
-            tracker.add_packet(packet)
-            
-            if packet.haslayer("IP"):
-                proto = "TCP" if packet.haslayer("TCP") else "UDP" if packet.haslayer("UDP") else "OTHER"
-                protocols[proto] += 1
-                top_talkers[packet["IP"].src] += 1
-        except Exception:
-            skipped += 1
+    try:
+        with PcapReader(pcap_path) as reader:
+            for packet in reader:
+                packet_count += 1
+                try:
+                    tracker.add_packet(packet)
+                    
+                    if packet.haslayer("IP"):
+                        proto = "TCP" if packet.haslayer("TCP") else "UDP" if packet.haslayer("UDP") else "OTHER"
+                        protocols[proto] += 1
+                        top_talkers[packet["IP"].src] += 1
+                except Exception:
+                    skipped += 1
+    except Exception as e:
+        logger.error(f"Failed to read PCAP file: {e}")
+        raise
     
-    logger.info(f"Processed packets, skipped {skipped}, active flows: {len(tracker.active_flows)}")
+    logger.info(f"Processed {packet_count} packets, skipped {skipped}, active flows: {len(tracker.active_flows)}")
     
     completed_flows = tracker.get_all_flows()
     logger.info(f"Found {len(completed_flows)} total flows")

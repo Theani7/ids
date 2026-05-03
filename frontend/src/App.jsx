@@ -4,7 +4,7 @@ import LiveTracker from './pages/LiveTracker';
 import BatchAnalyzer from './pages/BatchAnalyzer';
 import Analytics from './pages/Analytics';
 import PCAPAnalyzer from './pages/PCAPAnalyzer';
-import Navigation from './components/Navigation';
+import Navigation from './components/layout/Navigation';
 
 const DashboardLayout = ({ children }) => {
   return (

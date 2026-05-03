@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Activity, Shield, AlertTriangle, Radio } from 'lucide-react';
 import useWebSocket from '../hooks/useWebSocket';
-import { getStats, startCapture, stopCapture } from '../api/client';
-import StatCard from '../components/StatCard';
-import TrafficChart from '../components/TrafficChart';
+import { getStats, startCapture, stopCapture } from '../services/api';
+import StatCard from '../components/ui/StatCard';
+import TrafficChart from '../components/charts/TrafficChart';
 import AlertFeed from '../components/AlertFeed';
 import InterfaceSelector from '../components/InterfaceSelector';
 

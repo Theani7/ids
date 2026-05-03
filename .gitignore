@@ -24,3 +24,10 @@ coverage.xml
 .mypy_cache
 .pytest_cache
 .hypothesis
+
+# macOS
+.DS_Store
+
+# OpenCode
+AGENTS.md
+GEMINI.md

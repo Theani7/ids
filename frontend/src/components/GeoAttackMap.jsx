@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getGeography } from '../api/client';
+import { getGeography } from '../services/api';
 import { Globe, MapPin, Flag, Activity } from 'lucide-react';
 
 export default function GeoAttackMap() {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { exportCSV, exportJSON } from '../api/client';
+import { exportCSV, exportJSON } from '../services/api';
 import { Download, FileSpreadsheet, FileJson } from 'lucide-react';
 
 export default function ExportReports() {
