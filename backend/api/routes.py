@@ -137,9 +137,23 @@ async def get_interfaces():
                 try:
                     for iface in conf.ifaces.values():
                         if iface.name == i or iface.guid == i:
-                            friendly = f"{iface.description} ({i})"
-                            desc_lower = iface.description.lower()
-                            if "wi-fi" in desc_lower or "wifi" in desc_lower or "ethernet" in desc_lower:
+                            desc_lower = iface.description.lower() if iface.description else ""
+                            
+                            # Nicer friendly name for Windows
+                            if iface.description:
+                                friendly = iface.description
+                            else:
+                                friendly = i
+                            
+                            # Strict filtering for physical Wi-Fi/Ethernet
+                            is_physical = any(keyword in desc_lower for keyword in ["wi-fi", "wifi", "ethernet"])
+                            # Exclude known "weird" virtual/non-physical adapters
+                            is_weird = any(keyword in desc_lower for keyword in [
+                                "virtual", "pseudo", "loopback", "bluetooth", 
+                                "direct", "miniport", "pge", "tunnel", "host-only"
+                            ])
+                            
+                            if is_physical and not is_weird:
                                 is_valid = True
                             break
                 except Exception:
@@ -173,7 +187,12 @@ async def get_interfaces():
         logger.warning(f"Failed to get interfaces via Scapy: {e}")
         import psutil
         for i in psutil.net_if_addrs().keys():
-            if "lo" not in i.lower() and ("en" in i or "eth" in i or "wl" in i):
+            name_lower = i.lower()
+            # Basic physical interface identification for fallback
+            is_likely_physical = any(kw in name_lower for kw in ["en", "eth", "wl", "wi-fi", "ethernet"])
+            is_likely_virtual = any(kw in name_lower for kw in ["lo", "vbox", "vmware", "virtual", "docker", "br-", "tun", "tap"])
+            
+            if is_likely_physical and not is_likely_virtual:
                 interfaces.append({"raw": i, "friendly": i})
         
     return {"interfaces": interfaces}
@@ -192,15 +211,9 @@ async def start_capture(body: CaptureStartRequest, request: Request):
         if not check_rate_limit(f"capture:{client_ip}", max_requests=10, window_seconds=60):
             raise HTTPException(status_code=429, detail="Too many capture requests. Please wait.")
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-        
         sniffer = PacketSniffer(
             interface=body.interface,
             result_queue=result_queue,
-            loop=loop,
         )
 
         sniffer_thread = threading.Thread(target=sniffer.start, daemon=True)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import json
 from typing import List, Any
@@ -11,12 +12,28 @@ logger = logging.getLogger(__name__)
 notifier = TelegramNotifier()
 
 async def process_flow_result(result: dict, websocket_clients: List[WebSocket]):
+    """
+    Handles a single flow result by broadcasting it immediately 
+    and then asynchronously performing geolocation and persistence.
+    """
+    # 1. Immediate broadcast for low latency (without geo data first)
+    # We broadcast immediately so the dashboard updates even if geo/db are slow
+    await broadcast_to_clients(result, websocket_clients)
+
+    # 2. Offload heavier tasks to the background
+    asyncio.create_task(_handle_background_tasks(result, websocket_clients))
+
+async def _handle_background_tasks(result: dict, websocket_clients: List[WebSocket]):
+    """Performs geolocation, database persistence, and notifications in the background."""
     # 1. Geolocation Injection
-    geo_data = await get_geolocation_for_ip(result.get("src_ip", ""))
-    result["src_lat"] = geo_data["lat"]
-    result["src_lon"] = geo_data["lon"]
-    result["src_country"] = geo_data["country"]
-    result["src_city"] = geo_data["city"]
+    try:
+        geo_data = await get_geolocation_for_ip(result.get("src_ip", ""))
+        result["src_lat"] = geo_data["lat"]
+        result["src_lon"] = geo_data["lon"]
+        result["src_country"] = geo_data["country"]
+        result["src_city"] = geo_data["city"]
+    except Exception as e:
+        logger.debug(f"Geolocation error: {e}")
 
     # 2. Persist to DB
     db = SessionLocal()
@@ -37,8 +54,11 @@ async def process_flow_result(result: dict, websocket_clients: List[WebSocket]):
         except Exception as exc:
             logger.debug("Telegram notification error: %s", exc)
 
-    # 4. WebSocket broadcast
-    await broadcast_to_clients(result, websocket_clients)
+    # 4. Optional: Send an update broadcast with geo data
+    # (Optional because the frontend might not need a second update for the same flow)
+    # For now, we'll skip the second broadcast to save bandwidth unless malicious
+    if result.get("label") == "MALICIOUS":
+        await broadcast_to_clients(result, websocket_clients)
 
 async def process_dns_result(result: dict, websocket_clients: List[WebSocket]):
     db = SessionLocal()

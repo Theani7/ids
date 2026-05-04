@@ -26,11 +26,9 @@ class PacketSniffer:
         self,
         interface: str,
         result_queue: queue.Queue,
-        loop: asyncio.AbstractEventLoop,
     ):
         self.interface = interface
         self.result_queue = result_queue
-        self.loop = loop
         self.tracker = FlowTracker()
         self._stop_event = threading.Event()
         self._packet_count = 0

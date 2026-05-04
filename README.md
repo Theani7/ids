@@ -159,6 +159,25 @@ npm run dev
 
 ---
 
+## 9. Testing & Validation
+
+You can use the included `stress_test.py` script to simulate network traffic and verify the IDS detection capabilities.
+
+**Note:** Requires `scapy` installed and must be run as **Administrator / sudo**.
+
+```bash
+# Usage: python stress_test.py <interface_name> [duration_seconds]
+python stress_test.py "Wi-Fi" 30
+```
+
+The script will simulate:
+- **SYN Floods:** Rapid TCP SYN packets to port 80.
+- **Port Scans:** Probing various ports to trigger "Port Scan" alerts.
+- **UDP Floods:** High-volume UDP traffic.
+- **Mixed Traffic:** Normal-looking TCP/UDP packets.
+
+---
+
 ## Project Structure
 
 ```
@@ -229,11 +248,17 @@ python -m backend.ml.train
 Download the CIC-IDS2017 dataset and place the CSV files in the `data/` directory.
 
 ### ❌ Network interface not found
-List available interfaces:
+On Windows, the system now automatically filters for **physical** Wi-Fi and Ethernet adapters, excluding virtual ones (Hyper-V, Bluetooth, etc.) to keep the UI clean. 
+
+If your interface is missing:
+- Ensure **Npcap** is installed.
+- Ensure the interface is **active** and connected.
+- If you specifically need a virtual interface, you can manually set `NETWORK_INTERFACE` in your `.env` file.
+
+To list all available raw names:
 ```bash
-python -c "import psutil; print(list(psutil.net_if_addrs().keys()))"
+python -c "from scapy.all import get_if_list; print(get_if_list())"
 ```
-On macOS, the main interface is usually `en0`. On Linux, it's `eth0` or `wlan0`. Update `.env` accordingly.
 
 ### ❌ WebSocket disconnects
 The frontend auto-reconnects with exponential backoff. If the backend is down, you'll see a red "DISCONNECTED" indicator in the dashboard header.

@@ -44,9 +44,12 @@ def _get_default_interface() -> str:
             return "en0"
 
         if sys.platform == "win32":
-            # On Windows, we want the NPF/Npcap interface names
+            # On Windows, we want the NPF/Npcap interface names but only for physical adapters
             for iface in interfaces:
-                if "ethernet" in iface.lower() or "wi-fi" in iface.lower() or "npf" in iface.lower():
+                iface_lower = iface.lower()
+                is_physical = "ethernet" in iface_lower or "wi-fi" in iface_lower or "npf" in iface_lower
+                is_weird = any(k in iface_lower for k in ["virtual", "pseudo", "loopback", "bluetooth", "direct"])
+                if is_physical and not is_weird:
                     return iface
             return interfaces[0] if interfaces else "\\\\Device\\\\NPF_Unknown"
 
