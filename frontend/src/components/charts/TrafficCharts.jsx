@@ -18,18 +18,24 @@ import { Activity, Layers, Server } from 'lucide-react';
 
 const COLORS = ['#00f0ff', '#ff0040', '#00ff88', '#ffaa00', '#aa00ff'];
 
-export default function TrafficCharts() {
+export default function TrafficCharts({ refreshTrigger }) {
   const [trafficData, setTrafficData] = useState(null);
   const [protocolData, setProtocolData] = useState(null);
   const [hours, setHours] = useState(24);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, [hours]);
 
-  const loadData = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadData(false);
+    }
+  }, [refreshTrigger]);
+
+  const loadData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const [traffic, protocols] = await Promise.all([
         getTrafficStats(hours),
@@ -40,7 +46,7 @@ export default function TrafficCharts() {
     } catch (err) {
       console.error('Failed to load traffic data:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 

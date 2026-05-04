@@ -2,25 +2,31 @@ import { useState, useEffect } from 'react';
 import { getGeography } from '../services/api';
 import { Globe, MapPin, Flag, Activity } from 'lucide-react';
 
-export default function GeoAttackMap() {
+export default function GeoAttackMap({ refreshTrigger }) {
   const [geoData, setGeoData] = useState(null);
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState(null);
 
   useEffect(() => {
-    loadGeoData();
+    loadGeoData(true);
   }, [days]);
 
-  const loadGeoData = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadGeoData(false);
+    }
+  }, [refreshTrigger]);
+
+  const loadGeoData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const data = await getGeography(days);
       setGeoData(data);
     } catch (err) {
       console.error('Failed to load geography data:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 

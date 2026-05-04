@@ -18,24 +18,30 @@ import { TrendingUp, Calendar, AlertTriangle, Activity } from 'lucide-react';
 
 const COLORS = ['#ff0040', '#00f0ff', '#00ff88', '#ffaa00', '#aa00ff', '#ff00aa'];
 
-export default function AttackTrends() {
+export default function AttackTrends({ refreshTrigger }) {
   const [trendData, setTrendData] = useState(null);
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadTrends();
+    loadTrends(true);
   }, [days]);
 
-  const loadTrends = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadTrends(false);
+    }
+  }, [refreshTrigger]);
+
+  const loadTrends = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const data = await getTrends(days);
       setTrendData(data);
     } catch (err) {
       console.error('Failed to load trends:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
