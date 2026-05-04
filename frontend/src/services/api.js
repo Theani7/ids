@@ -65,6 +65,11 @@ export async function getAlerts(page = 1, limit = 50, filter = 'all') {
   return data;
 }
 
+export async function clearHistory() {
+  const { data } = await api.delete('/api/alerts/clear');
+  return data;
+}
+
 export async function getStats() {
   const { data } = await api.get('/api/stats');
   return data;

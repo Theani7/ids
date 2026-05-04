@@ -242,6 +242,25 @@ async def stop_capture():
     return {"status": "stopped"}
 
 
+@router.delete("/api/alerts/clear")
+async def clear_database(db: Session = Depends(get_db)):
+    """Clear all alerts and monitoring data from the database."""
+    try:
+        from backend.db.models import Alert, DNSQuery, HTTPRequest, TrafficStats, ProtocolStats
+        db.query(Alert).delete()
+        db.query(DNSQuery).delete()
+        db.query(HTTPRequest).delete()
+        db.query(TrafficStats).delete()
+        db.query(ProtocolStats).delete()
+        db.commit()
+        logger.info("Database monitoring tables cleared by user.")
+        return {"status": "success", "message": "Monitoring history cleared"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to clear database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/alerts")
 async def get_alerts(
     page: int = Query(1, ge=1),
