@@ -103,8 +103,8 @@ export default function BatchAnalyzer() {
 
         {/* Results Section */}
         {results && (
-          <div className="animate-fade-in">
-            <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-[#8b9ab3] mb-4 flex items-center gap-2">
+          <div className="animate-fade-in space-y-6">
+            <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-[#8b9ab3] flex items-center gap-2">
               <CheckCircle size={14} className="text-netgreen" />
               Analysis Complete
             </h3>
@@ -124,11 +124,41 @@ export default function BatchAnalyzer() {
               />
               <StatCard
                 title="Detection Ratio"
-                value={results.total > 0 ? `${((results.malicious / results.total) * 100).toFixed(2)}%` : '0%'}
+                value={results.total > 0 ? `${((results.malicious / results.total) * 100).toFixed(1)}%` : '0%'}
                 subtitle="Malicious / Total"
                 color="green"
               />
             </div>
+
+            {/* Threat Breakdown */}
+            {results.malicious > 0 && results.attack_types && Object.keys(results.attack_types).length > 0 && (
+              <div className="bg-netsurface border border-netborder rounded-xl p-6">
+                <h4 className="text-xs font-mono uppercase tracking-[0.1em] text-[#8b9ab3] mb-4">
+                  Threat Breakdown
+                </h4>
+                <div className="space-y-4">
+                  {Object.entries(results.attack_types)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([type, count]) => {
+                      const percentage = (count / results.malicious) * 100;
+                      return (
+                        <div key={type} className="space-y-1.5">
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-white">{type}</span>
+                            <span className="text-netred">{count.toLocaleString()} flows ({percentage.toFixed(1)}%)</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-netbg rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-netred rounded-full"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

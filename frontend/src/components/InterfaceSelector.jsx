@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Wifi, AlertCircle } from 'lucide-react';
+import { Play, Square, Wifi, AlertCircle, RefreshCw } from 'lucide-react';
 import { getInterfaces } from '../services/api';
 
 export default function InterfaceSelector({ onStart, onStop, capturing }) {
@@ -7,21 +7,27 @@ export default function InterfaceSelector({ onStart, onStop, capturing }) {
   const [selected, setSelected] = useState('');
   const [selectedFriendly, setSelectedFriendly] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await getInterfaces();
-        setInterfaces(data);
-        if (data.length > 0) {
-          setSelected(data[0].raw);
-          setSelectedFriendly(data[0].friendly);
-        }
-      } catch {
-        setError('Could not load interfaces');
+  const loadInterfaces = async () => {
+    setRefreshing(true);
+    try {
+      const data = await getInterfaces();
+      setInterfaces(data);
+      if (data.length > 0 && !selected) {
+        setSelected(data[0].raw);
+        setSelectedFriendly(data[0].friendly);
       }
-    })();
+    } catch {
+      setError('Could not load interfaces');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInterfaces();
   }, []);
 
   const handleStart = async () => {
@@ -56,10 +62,20 @@ export default function InterfaceSelector({ onStart, onStop, capturing }) {
 
   return (
     <div className="card p-4">
-      <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
-        <Wifi className="w-4 h-4 text-netcyan" />
-        Network Interface
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-gray-400 flex items-center gap-2">
+          <Wifi className="w-4 h-4 text-netcyan" />
+          Network Interface
+        </h3>
+        <button 
+          onClick={loadInterfaces} 
+          disabled={capturing || refreshing}
+          className="p-1 hover:bg-white/10 rounded transition-colors disabled:opacity-30"
+          title="Refresh interfaces"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
 
       <select
         value={selected}
