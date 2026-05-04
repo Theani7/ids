@@ -14,9 +14,17 @@ else:
     logger.info(".env file not found, using default configuration")
 
 def _get_default_interface() -> str:
+    try:
+        from scapy.all import conf
+        # Get list of interfaces from Scapy
+        ifaces = str(conf.iface)
+        if ifaces:
+            return ifaces
+    except Exception:
+        pass
+
     import psutil
     interfaces = list(psutil.net_if_addrs().keys())
-    logger.info(f"Available network interfaces: {interfaces}")
     
     if sys.platform == "darwin":
         for iface in ["en0", "en1", "en2", "en3"]:
@@ -25,13 +33,14 @@ def _get_default_interface() -> str:
         return "en0"
     
     if sys.platform == "win32":
+        # On Windows, we want the NPF/Npcap interface names
         for iface in interfaces:
-            if not iface.startswith("\\"):
+            if "ethernet" in iface.lower() or "wi-fi" in iface.lower() or "npf" in iface.lower():
                 return iface
         return interfaces[0] if interfaces else "\\\\Device\\\\NPF_Unknown"
     
     for iface in interfaces:
-        if iface.lower() in ["wifi", "wi-fi", "ethernet", "lan", "wan", "wlan0"]:
+        if iface.lower() in ["wifi", "wi-fi", "ethernet", "lan", "wan", "wlan0", "eth0"]:
             return iface
     
     return interfaces[0] if interfaces else "eth0"

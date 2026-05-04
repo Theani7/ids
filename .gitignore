@@ -28,6 +28,10 @@ coverage.xml
 # macOS
 .DS_Store
 
+# Local patched dependencies
+xgboost/
+start.sh
+
 # OpenCode
 AGENTS.md
 GEMINI.md

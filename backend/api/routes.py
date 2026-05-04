@@ -121,26 +121,43 @@ async def get_status():
 
 @router.get("/api/interfaces")
 async def get_interfaces():
-    """List available network interfaces."""
+    """List available network interfaces using Scapy for better cross-platform support."""
     import sys
     try:
+        from scapy.all import get_if_list, conf
+        raw_interfaces = get_if_list()
+        
+        # On Windows, we try to get friendly names if possible
+        interfaces = []
+        for i in raw_interfaces:
+            friendly = i
+            if sys.platform == "win32":
+                # Scapy's conf.ifaces often has more detailed info on Windows
+                try:
+                    for iface in conf.ifaces.values():
+                        if iface.name == i or iface.guid == i:
+                            friendly = f"{iface.description} ({i})"
+                            break
+                except Exception:
+                    pass
+            elif sys.platform == "darwin":
+                friendly_names = {
+                    "en0": "Wi-Fi (en0)", "en1": "Ethernet (en1)", "en2": "Ethernet (en2)",
+                    "lo0": "Loopback (lo0)", "bridge0": "Bridge (bridge0)"
+                }
+                friendly = friendly_names.get(i, i)
+            
+            interfaces.append({"raw": i, "friendly": friendly})
+            
+        if not interfaces:
+            raise Exception("No interfaces found via Scapy")
+            
+    except Exception as e:
+        logger.warning(f"Failed to get interfaces via Scapy: {e}")
+        import psutil
         raw_interfaces = list(psutil.net_if_addrs().keys())
-        friendly_names = {
-            "en0": "Wi-Fi (en0)",
-            "en1": "Ethernet (en1)",
-            "en2": "Ethernet (en2)",
-            "en3": "Ethernet (en3)",
-            "en4": "Ethernet (en4)",
-            "lo0": "Loopback (lo0)",
-        }
-        if sys.platform == "darwin":
-            interfaces = [{"raw": i, "friendly": friendly_names.get(i, i)} for i in raw_interfaces]
-        elif sys.platform == "win32":
-            interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces]
-        else:
-            interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces]
-    except Exception:
-        interfaces = [{"raw": "eth0", "friendly": "eth0"}, {"raw": "lo", "friendly": "lo"}]
+        interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces]
+        
     return {"interfaces": interfaces}
 
 

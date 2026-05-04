@@ -33,6 +33,7 @@ class StatsResponse(BaseModel):
 
 
 class StatusResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
     capturing: bool
     model_loaded: bool
     interface: str
