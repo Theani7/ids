@@ -416,8 +416,9 @@ FlowKey = Tuple[str, str, int, int, str]
 class FlowTracker:
     """Maintains active flows and yields completed ones on demand."""
 
-    def __init__(self):
+    def __init__(self, max_flows: int = 100000):
         self.active_flows: Dict[FlowKey, FlowData] = {}
+        self.max_flows = max_flows
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -495,6 +496,16 @@ class FlowTracker:
         if key in self.active_flows:
             self.active_flows[key].add_packet(pkt_info)
         else:
+            # Robustness: Hard cap on active flows to prevent memory exhaustion
+            if len(self.active_flows) >= self.max_flows:
+                # If full, drop the oldest flow to make room
+                try:
+                    oldest_key = min(self.active_flows.keys(), key=lambda k: self.active_flows[k].last_seen)
+                    del self.active_flows[oldest_key]
+                except Exception:
+                    # Fallback: just clear a random one if min() fails
+                    self.active_flows.pop(next(iter(self.active_flows)))
+            
             self.active_flows[key] = FlowData(pkt_info)
 
     # ------------------------------------------------------------------

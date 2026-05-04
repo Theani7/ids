@@ -25,6 +25,15 @@ coverage.xml
 .pytest_cache
 .hypothesis
 
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Databases
+*.db
+ids_database.db
+
 # macOS
 .DS_Store
 

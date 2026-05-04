@@ -199,11 +199,13 @@ class IDSPredictor:
             if col not in df.columns:
                 df[col] = 0.0
 
+        # Create a copy with only needed features
         df_aligned = df[self.feature_columns].copy()
         
         df_aligned.fillna(0, inplace=True)
         df_aligned.replace([float("inf"), float("-inf")], 0, inplace=True)
 
+        # Predict
         preds = self.model.predict(df_aligned)
         
         malicious_count = int(sum(preds == 1))
@@ -212,8 +214,9 @@ class IDSPredictor:
         # Get attack types for malicious predictions
         attack_types = {}
         if malicious_count > 0:
-            for i, pred in enumerate(preds):
-                if pred == 1:
+            # Important: iterate using index-agnostic method to avoid mismatch if df had non-standard index
+            for i in range(len(preds)):
+                if preds[i] == 1:
                     features = df_aligned.iloc[i].to_dict()
                     attack_type = self._infer_attack_type(features)
                     attack_types[attack_type] = attack_types.get(attack_type, 0) + 1

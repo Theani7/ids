@@ -68,13 +68,25 @@ async def startup():
         logger.info(f"Received signal {sig}, initiating shutdown...")
         try:
             loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if loop and loop.is_running():
-            asyncio.create_task(shutdown_broadcast_task())
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(shutdown_broadcast_task(), loop)
+        except Exception as e:
+            logger.error(f"Error during signal-driven shutdown: {e}")
 
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # Standard signals for Unix
+    for sig in [signal.SIGINT, signal.SIGTERM]:
+        try:
+            signal.signal(sig, signal_handler)
+        except (ValueError, AttributeError):
+            # Windows might not support SIGTERM in all contexts
+            pass
+            
+    # Windows specific break signal
+    if sys.platform == "win32":
+        try:
+            signal.signal(signal.SIGBREAK, signal_handler)
+        except (ValueError, AttributeError):
+            pass
 
 
 @app.on_event("shutdown")

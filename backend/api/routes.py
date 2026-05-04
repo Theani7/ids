@@ -2,10 +2,7 @@
 FastAPI router — REST endpoints + WebSocket for the IDS dashboard.
 """
 
-import asyncio
-import json
-import logging
-import threading
+import queue
 from typing import List, Optional
 
 import psutil
@@ -50,7 +47,8 @@ router = APIRouter()
 
 sniffer: Optional[PacketSniffer] = None
 sniffer_thread: Optional[threading.Thread] = None
-result_queue: asyncio.Queue = asyncio.Queue()
+# Switch to a thread-safe standard queue for handoff from Scapy thread to FastAPI
+result_queue: queue.Queue = queue.Queue(maxsize=10000)
 websocket_clients: List[WebSocket] = []
 capturing: bool = False
 capture_lock: threading.Lock = threading.Lock()
@@ -66,9 +64,12 @@ async def broadcast_results():
     logger.info("Background broadcast task started")
     while not shutdown_event.is_set():
         try:
-            result = await asyncio.wait_for(result_queue.get(), timeout=1.0)
-        except asyncio.TimeoutError:
-            continue
+            # Non-blocking get from the thread-safe queue
+            try:
+                result = result_queue.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+                continue
         except Exception:
             await asyncio.sleep(0.5)
             continue
@@ -121,42 +122,59 @@ async def get_status():
 
 @router.get("/api/interfaces")
 async def get_interfaces():
-    """List available network interfaces using Scapy for better cross-platform support."""
+    """List available network interfaces, filtered to only include Wi-Fi and Ethernet."""
     import sys
+    interfaces = []
     try:
         from scapy.all import get_if_list, conf
         raw_interfaces = get_if_list()
         
-        # On Windows, we try to get friendly names if possible
-        interfaces = []
         for i in raw_interfaces:
             friendly = i
+            is_valid = False
+            
             if sys.platform == "win32":
-                # Scapy's conf.ifaces often has more detailed info on Windows
                 try:
                     for iface in conf.ifaces.values():
                         if iface.name == i or iface.guid == i:
                             friendly = f"{iface.description} ({i})"
+                            desc_lower = iface.description.lower()
+                            if "wi-fi" in desc_lower or "wifi" in desc_lower or "ethernet" in desc_lower:
+                                is_valid = True
                             break
                 except Exception:
                     pass
             elif sys.platform == "darwin":
                 friendly_names = {
                     "en0": "Wi-Fi (en0)", "en1": "Ethernet (en1)", "en2": "Ethernet (en2)",
-                    "lo0": "Loopback (lo0)", "bridge0": "Bridge (bridge0)"
+                    "en3": "Ethernet (en3)", "en4": "Ethernet (en4)"
                 }
-                friendly = friendly_names.get(i, i)
-            
-            interfaces.append({"raw": i, "friendly": friendly})
+                if i in friendly_names:
+                    friendly = friendly_names[i]
+                    is_valid = True
+            else:
+                # Linux and others
+                name_lower = i.lower()
+                if name_lower.startswith(("eth", "wlan", "enp", "wlp", "en", "wl")):
+                    # Avoid loopback and bridge even if they start with 'en' on some systems
+                    if "lo" not in name_lower and "br" not in name_lower:
+                        is_valid = True
+                        friendly = f"Ethernet/Wi-Fi ({i})" if not name_lower.startswith("wl") else f"Wi-Fi ({i})"
+
+            if is_valid:
+                interfaces.append({"raw": i, "friendly": friendly})
             
         if not interfaces:
-            raise Exception("No interfaces found via Scapy")
+            # Fallback for unexpected naming
+            logger.warning("No Wi-Fi/Ethernet interfaces identified. Returning all.")
+            interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces if "lo" not in i]
             
     except Exception as e:
         logger.warning(f"Failed to get interfaces via Scapy: {e}")
         import psutil
-        raw_interfaces = list(psutil.net_if_addrs().keys())
-        interfaces = [{"raw": i, "friendly": i} for i in raw_interfaces]
+        for i in psutil.net_if_addrs().keys():
+            if "lo" not in i.lower() and ("en" in i or "eth" in i or "wl" in i):
+                interfaces.append({"raw": i, "friendly": i})
         
     return {"interfaces": interfaces}
 
@@ -170,7 +188,7 @@ async def start_capture(body: CaptureStartRequest, request: Request):
             return {"status": "already_running", "interface": sniffer.interface if sniffer else ""}
 
         # Rate limiting: max 10 capture starts per minute
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = request.client.host if request.client else "127.0.0.1"
         if not check_rate_limit(f"capture:{client_ip}", max_requests=10, window_seconds=60):
             raise HTTPException(status_code=429, detail="Too many capture requests. Please wait.")
 
@@ -258,7 +276,7 @@ async def get_stats(db: Session = Depends(get_db)):
 @router.post("/api/batch-analyze")
 async def batch_analyze(file: UploadFile = File(...), request: Request = None):
     if request:
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = request.client.host if request.client else "127.0.0.1"
         if not check_rate_limit(f"batch:{client_ip}", max_requests=5, window_seconds=60):
             raise HTTPException(status_code=429, detail="Too many batch requests. Please wait.")
     

@@ -122,11 +122,21 @@ If not configured, the IDS will still work — Telegram alerts will simply be sk
 
 ## 6. Run the Backend
 
+### macOS / Linux
+Requires `sudo` for raw socket access:
 ```bash
 sudo uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-> **Note:** `sudo` is required because Scapy uses raw sockets for packet capture.
+### Windows
+1. Install **Npcap** (ensure "Install Npcap in WinPcap API-compatible Mode" is checked).
+2. Open PowerShell or Command Prompt as **Administrator**.
+3. Run:
+```powershell
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> **Note:** Elevated privileges are required because Scapy uses raw sockets for packet capture.
 
 ---
 

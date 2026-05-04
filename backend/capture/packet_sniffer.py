@@ -6,7 +6,7 @@ Runs in a daemon thread and pushes classified flow results into an
 WebSocket and persist them to the database.
 """
 
-import asyncio
+import queue
 import logging
 import threading
 from datetime import datetime
@@ -25,7 +25,7 @@ class PacketSniffer:
     def __init__(
         self,
         interface: str,
-        result_queue: asyncio.Queue,
+        result_queue: queue.Queue,
         loop: asyncio.AbstractEventLoop,
     ):
         self.interface = interface
@@ -35,15 +35,6 @@ class PacketSniffer:
         self._stop_event = threading.Event()
         self._packet_count = 0
         self._last_log_time = datetime.now()
-
-    # ------------------------------------------------------------------
-    # Async helper — called from the *event-loop* thread via
-    # ``loop.call_soon_threadsafe``.
-    # ------------------------------------------------------------------
-
-    async def _put_result(self, result: dict) -> None:
-        """Put a result dict on the asyncio queue."""
-        await self.result_queue.put(result)
 
     # ------------------------------------------------------------------
     # Packet handling (runs in the sniffer thread)
@@ -113,14 +104,11 @@ class PacketSniffer:
                         "is_malicious": is_malicious,
                     }
                     
-                    # Thread-safe transfer
+                    # Direct put into thread-safe queue
                     try:
-                        asyncio.run_coroutine_threadsafe(
-                            self._put_result(result),
-                            self.loop
-                        )
-                    except RuntimeError:
-                        pass
+                        self.result_queue.put_nowait(result)
+                    except queue.Full:
+                        logger.warning("Result queue is full, dropping DNS result")
             except Exception as exc:
                 logger.error(f"Error extracting DNS: {exc}")
         
@@ -175,14 +163,11 @@ class PacketSniffer:
                             "is_suspicious": is_suspicious,
                         }
                         
-                        # Thread-safe transfer
+                        # Direct put into thread-safe queue
                         try:
-                            asyncio.run_coroutine_threadsafe(
-                                self._put_result(result),
-                                self.loop
-                            )
-                        except RuntimeError:
-                            pass
+                            self.result_queue.put_nowait(result)
+                        except queue.Full:
+                            logger.warning("Result queue is full, dropping HTTP result")
             except Exception as exc:
                 logger.error(f"Error extracting HTTP: {exc}")
 
@@ -213,15 +198,13 @@ class PacketSniffer:
                 "timestamp": datetime.now(TIMEZONE).isoformat(),
             }
 
-            # Thread-safe transfer into the async world
+            # Direct put into thread-safe queue
             try:
-                asyncio.run_coroutine_threadsafe(
-                    self._put_result(result),
-                    self.loop
-                )
-            except RuntimeError:
-                # Event loop might have closed during shutdown
-                pass
+                self.result_queue.put_nowait(result)
+            except queue.Full:
+                logger.warning("Result queue is full, dropping flow result")
+            except Exception as exc:
+                logger.error(f"Error queueing flow result: {exc}")
 
     # ------------------------------------------------------------------
     # Start / stop

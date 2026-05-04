@@ -8,7 +8,7 @@ DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'ids_database.db')}"
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
     pool_pre_ping=True,
 )
 
@@ -18,9 +18,15 @@ Base = declarative_base()
 
 
 def init_db():
-    """Create all database tables."""
+    """Create all database tables and enable WAL mode for SQLite."""
     from backend.db.models import Alert, TrafficStats, ProtocolStats, DNSQuery, HTTPRequest  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    
+    # Enable WAL mode for better concurrency
+    from sqlalchemy import text
+    with engine.connect() as connection:
+        connection.execute(text("PRAGMA journal_mode=WAL"))
+        connection.commit()
 
 
 def get_db():

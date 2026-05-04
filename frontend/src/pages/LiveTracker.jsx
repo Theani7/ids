@@ -6,11 +6,13 @@ import StatCard from '../components/ui/StatCard';
 import TrafficChart from '../components/charts/TrafficChart';
 import AlertFeed from '../components/AlertFeed';
 import InterfaceSelector from '../components/InterfaceSelector';
+import { useToast } from '../components/ui/Toast';
 
 export default function LiveTracker() {
   const { alerts, isConnected, stats: liveStats } = useWebSocket();
   const [dbStats, setDbStats] = useState(null);
   const [capturing, setCapturing] = useState(false);
+  const { addToast } = useToast();
 
   useEffect(() => {
     (async () => {
@@ -19,22 +21,41 @@ export default function LiveTracker() {
         setDbStats(s);
       } catch (err) {
         console.error('Failed to load stats:', err);
+        addToast('Failed to load historical statistics', 'error');
       }
     })();
-  }, []);
+  }, [addToast]);
 
   const totalFlows = (dbStats?.total_flows || 0) + liveStats.total;
   const maliciousCount = (dbStats?.malicious_count || 0) + liveStats.malicious;
   const detectionRate = totalFlows > 0 ? ((maliciousCount / totalFlows) * 100).toFixed(1) : '0.0';
 
   const handleStart = async (iface) => {
-    await startCapture(iface);
-    setCapturing(true);
+    try {
+      const response = await startCapture(iface);
+      if (response.status === 'started') {
+        setCapturing(true);
+        addToast(`Started capture on ${iface}`, 'success');
+      } else if (response.status === 'already_running') {
+        setCapturing(true);
+        addToast('Capture is already running', 'info');
+      }
+    } catch (err) {
+      console.error('Failed to start capture:', err);
+      const detail = err.response?.data?.detail || 'Permission denied or interface busy.';
+      addToast(`Start failed: ${detail}`, 'error');
+    }
   };
 
   const handleStop = async () => {
-    await stopCapture();
-    setCapturing(false);
+    try {
+      await stopCapture();
+      setCapturing(false);
+      addToast('Stopped packet capture', 'info');
+    } catch (err) {
+      console.error('Failed to stop capture:', err);
+      addToast('Failed to stop capture', 'error');
+    }
   };
 
   const maliciousIps = alerts.filter((a) => a.label === 'MALICIOUS').slice(0, 5);
